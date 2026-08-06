@@ -14,7 +14,8 @@ public record ApiResponse<T>(
         return new ApiResponse<>(true, data, null, currentTraceId());
     }
 
-    public static ApiResponse<Void> success() {
+    /** 데이터 없이 성공만 알리고 싶을 때 (예: DELETE). success(data)와 이름이 겹치면 record accessor와 충돌하므로 별도 이름 사용. */
+    public static ApiResponse<Void> noContent() {
         return new ApiResponse<>(true, null, null, currentTraceId());
     }
 

@@ -4,6 +4,7 @@ import com.duckspace.global.response.ApiResponse;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.core.convert.ConversionFailedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,7 +49,8 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(GlobalErrorCode.VALIDATION_FAILED.getStatus())
                 .body(new ApiResponse<>(false, fieldErrors,
                         new ApiResponse.ErrorDetail(GlobalErrorCode.VALIDATION_FAILED.name(),
-                                GlobalErrorCode.VALIDATION_FAILED.getMessage())));
+                                GlobalErrorCode.VALIDATION_FAILED.getMessage()),
+                        MDC.get("traceId")));
     }
 
     @ExceptionHandler({
@@ -96,6 +98,6 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ApiResponse<Void>> errorResponse(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status)
-                .body(new ApiResponse<>(false, null, new ApiResponse.ErrorDetail(code, message)));
+                .body(new ApiResponse<>(false, null, new ApiResponse.ErrorDetail(code, message), MDC.get("traceId")));
     }
 }
