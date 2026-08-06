@@ -3,9 +3,20 @@ spring:
     name: duckspace
   profiles:
     default: local
+  jpa:
+    # 트랜잭션 밖(뷰 렌더링 시점)까지 영속성 컨텍스트를 열어두지 않습니다.
+    # 켜두면 요청 내내 DB 커넥션을 붙잡고 있어 커넥션 풀이 금방 마릅니다.
+    open-in-view: false
+  servlet:
+    multipart:
+      # 기본값이 1MB라 폰으로 찍은 굿즈 사진(보통 3~8MB)이 업로드에 실패합니다.
+      max-file-size: 10MB
+      max-request-size: 30MB
 
 jwt:
-  secret: ${JWT_SECRET:local-dev-temporary-secret-key-change-this-later-123456}
+  # 기본값을 두지 않습니다. dev/prod에서 JWT_SECRET 을 빠뜨리면
+  # 조용히 공개된 값으로 동작하는 대신 부팅이 실패하도록 합니다. (local 값은 application-local.yml)
+  secret: ${JWT_SECRET}
   access-token-validity: 1800000      # 30분 (ms)
   refresh-token-validity: 1209600000  # 14일 (ms)
 

@@ -35,3 +35,12 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### 시크릿 (절대 커밋 금지) ###
+.env
+.env.*
+*.pem
+*.p12
+*.key
+src/main/resources/application-secret.yml
+src/main/resources/application-prod.yml

@@ -1,3 +1,7 @@
+jwt:
+  # 로컬 전용 값. dev/prod 는 반드시 환경변수 JWT_SECRET 으로 주입합니다.
+  secret: local-dev-temporary-secret-key-change-this-later-123456
+
 spring:
   h2:
     console:
