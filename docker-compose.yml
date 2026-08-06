@@ -1,0 +1,33 @@
+# 로컬 개발용 MySQL.
+#   docker compose up -d      실행
+#   docker compose down       중지 (데이터 유지)
+#   docker compose down -v    중지 + 데이터 삭제 (스키마가 꼬였을 때)
+#
+# 아래 계정 정보는 로컬 전용이며 127.0.0.1 로만 바인딩되어 외부에서 접근할 수 없습니다.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: duckspace-mysql
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3306:3306"   # 외부 노출 금지. 호스트에서만 접근합니다.
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: duckspace
+      MYSQL_USER: duckspace
+      MYSQL_PASSWORD: duckspace
+      TZ: Asia/Seoul
+    command:
+      # 굿즈명에 이모지가 들어갈 수 있어 utf8mb4 가 필요합니다.
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql_data:

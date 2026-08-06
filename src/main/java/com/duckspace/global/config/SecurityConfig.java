@@ -34,7 +34,6 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
             "/actuator/**",
-            "/h2-console/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
@@ -50,9 +49,6 @@ public class SecurityConfig {
 
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
-
-                // H2 콘솔이 iframe을 쓰기 때문에 필요합니다. (local 전용)
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()   // CORS preflight
