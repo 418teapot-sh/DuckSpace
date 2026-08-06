@@ -8,3 +8,7 @@ jwt:
   secret: ${JWT_SECRET:local-dev-temporary-secret-key-change-this-later-123456}
   access-token-validity: 1800000      # 30분 (ms)
   refresh-token-validity: 1209600000  # 14일 (ms)
+
+cors:
+  # 배포 시 CORS_ALLOWED_ORIGINS로 덮어쓰세요. 와일드카드(*) 사용 가능.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://*.vercel.app}
