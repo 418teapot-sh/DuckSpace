@@ -1,3 +1,10 @@
 spring:
   application:
     name: duckspace
+  profiles:
+    default: local
+
+jwt:
+  secret: ${JWT_SECRET:local-dev-temporary-secret-key-change-this-later-123456}
+  access-token-validity: 1800000      # 30분 (ms)
+  refresh-token-validity: 1209600000  # 14일 (ms)
