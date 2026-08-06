@@ -4,6 +4,9 @@ import com.duckspace.global.auth.JwtAccessDeniedHandler;
 import com.duckspace.global.auth.JwtAuthenticationEntryPoint;
 import com.duckspace.global.auth.JwtAuthenticationFilter;
 import com.duckspace.global.auth.JwtProperties;
+import com.duckspace.global.auth.oauth.OAuth2AuthorizationRequestBasedOnCookieRepository;
+import com.duckspace.global.auth.oauth.OAuth2SuccessHandler;
+import com.duckspace.global.auth.oauth.OAuth2UserCustomService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -12,6 +15,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -26,6 +31,9 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
     private final CorsConfigurationSource corsConfigurationSource;
+    private final OAuth2UserCustomService oAuth2UserCustomService;
+    private final OAuth2SuccessHandler oAuth2SuccessHandler;
+    private final OAuth2AuthorizationRequestBasedOnCookieRepository authorizationRequestRepository;
 
     /**
      * 인증 없이 접근할 수 있는 경로.
@@ -33,6 +41,8 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
+            "/oauth2/**",
+            "/login/oauth2/**",
             "/actuator/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -61,8 +71,21 @@ public class SecurityConfig {
                         .accessDeniedHandler(jwtAccessDeniedHandler)             // 403
                 )
 
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+
+                .oauth2Login(oauth2 -> oauth2
+                        .authorizationEndpoint(endpoint -> endpoint
+                                .authorizationRequestRepository(authorizationRequestRepository))
+                        .userInfoEndpoint(userInfo -> userInfo.userService(oAuth2UserCustomService))
+                        .successHandler(oAuth2SuccessHandler)
+                );
 
         return http.build();
+    }
+
+    /** 폼 로그인(이메일/비밀번호) 회원가입·로그인에서 비밀번호를 암호화/검증하는 데 사용합니다. */
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }

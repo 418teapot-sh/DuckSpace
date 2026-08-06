@@ -44,6 +44,9 @@ dependencies {
 
 	// Swagger (springdoc)
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.1'
+
+	// OAuth2 로그인 (Google)
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 }
 
 tasks.named('test') {
