@@ -75,7 +75,7 @@ class AuthServiceTest {
         void 신규_이메일이면_가입하고_토큰을_발급한다() {
             given(userRepository.findByEmail("test@duckspace.com")).willReturn(Optional.empty());
             given(passwordEncoder.encode("password1234")).willReturn("encoded");
-            given(userRepository.save(any(User.class))).willAnswer(invocation -> {
+            given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
                 User user = invocation.getArgument(0);
                 ReflectionTestUtils.setField(user, "id", 1L);
                 return user;
@@ -157,7 +157,7 @@ class AuthServiceTest {
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> authService.login(new LoginRequest("test@duckspace.com", "password1234")));
 
-            assertThat(exception.getErrorCode()).isEqualTo(AuthErrorCode.OAUTH_ONLY_ACCOUNT);
+            assertThat(exception.getErrorCode()).isEqualTo(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
         @Test
@@ -185,6 +185,7 @@ class AuthServiceTest {
         void 저장된_토큰과_일치하면_새_토큰을_발급한다() {
             String refreshToken = jwtTokenProvider.createRefreshToken(1L);
             RefreshToken saved = new RefreshToken(1L, RefreshTokenHasher.hash(refreshToken));
+            given(userRepository.existsById(1L)).willReturn(true);
             given(refreshTokenRepository.findByUserId(1L)).willReturn(Optional.of(saved));
 
             TokenResponse response = authService.reissue(refreshToken);
@@ -215,6 +216,7 @@ class AuthServiceTest {
         void 저장된_해시와_일치하지_않으면_예외() {
             String refreshToken = jwtTokenProvider.createRefreshToken(1L);
             RefreshToken saved = new RefreshToken(1L, RefreshTokenHasher.hash("다른-토큰"));
+            given(userRepository.existsById(1L)).willReturn(true);
             given(refreshTokenRepository.findByUserId(1L)).willReturn(Optional.of(saved));
 
             BusinessException exception = assertThrows(BusinessException.class,

@@ -12,6 +12,7 @@ import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.auth.JwtTokenProvider;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +40,12 @@ public class AuthService {
                 .password(passwordEncoder.encode(request.password()))
                 .authProvider(AuthProvider.LOCAL)
                 .build();
-        userRepository.save(user);
+
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+        }
 
         return issueTokens(user.getId());
     }
@@ -49,17 +55,9 @@ public class AuthService {
         loginAttemptLimiter.checkAllowed(request.email());
 
         User user = userRepository.findByEmail(request.email())
-                .orElseGet(() -> {
-                    loginAttemptLimiter.onFailure(request.email());
-                    throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
-                });
+                .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_CREDENTIALS));
 
-        if (!user.isLocal()) {
-            throw new BusinessException(AuthErrorCode.OAUTH_ONLY_ACCOUNT);
-        }
-
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            loginAttemptLimiter.onFailure(request.email());
+        if (!user.isLocal() || !passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
@@ -74,6 +72,10 @@ public class AuthService {
         }
 
         Long userId = jwtTokenProvider.getUserId(refreshToken);
+        if (!userRepository.existsById(userId)) {
+            throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
         refreshTokenRepository.findByUserId(userId)
                 .filter(saved -> RefreshTokenHasher.matches(refreshToken, saved.getTokenHash()))
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
@@ -104,8 +106,14 @@ public class AuthService {
         String tokenHash = RefreshTokenHasher.hash(rawToken);
         RefreshToken entity = refreshTokenRepository.findByUserId(userId)
                 .map(saved -> saved.update(tokenHash))
-                .orElse(new RefreshToken(userId, tokenHash));
+                .orElseGet(() -> new RefreshToken(userId, tokenHash));
 
-        refreshTokenRepository.save(entity);
+        try {
+            refreshTokenRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            RefreshToken concurrentlyInserted = refreshTokenRepository.findByUserId(userId)
+                    .orElseThrow(() -> e);
+            refreshTokenRepository.saveAndFlush(concurrentlyInserted.update(tokenHash));
+        }
     }
 }

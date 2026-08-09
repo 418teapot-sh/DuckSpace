@@ -23,7 +23,7 @@ public class RefreshToken extends BaseTimeEntity {
     @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 
-    /** 원본 토큰이 아니라 {@link RefreshTokenHasher}로 해시한 값. DB 유출 시에도 토큰이 그대로 쓰이지 않도록 한다. */
+    /** 원본 토큰이 아니라 RefreshTokenHasher로 해시한 값. DB 유출 시에도 토큰이 그대로 쓰이지 않도록 한다. */
     @Column(name = "token_hash", nullable = false)
     private String tokenHash;
 
