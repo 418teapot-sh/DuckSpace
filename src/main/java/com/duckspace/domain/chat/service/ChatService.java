@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -37,11 +38,13 @@ public class ChatService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+    private final ChatRoomRegistry chatRoomRegistry;
 
     /**
      * 상대방과의 채팅방을 가져오고, 없으면 만듭니다. 여러 번 호출해도 방은 하나만 생깁니다.
+     *
+     * <p>이미 대화가 오간 방이면 목록 조회와 동일하게 마지막 메시지·안 읽음 여부를 채워서 돌려줍니다.
      */
-    @Transactional
     public ChatRoomResponse createOrGetRoom(Long myId, Long partnerId) {
         if (Objects.equals(myId, partnerId)) {
             throw new BusinessException(ChatErrorCode.CANNOT_CHAT_WITH_SELF);
@@ -50,7 +53,9 @@ public class ChatService {
                 .orElseThrow(() -> new BusinessException(ChatErrorCode.PARTNER_NOT_FOUND));
 
         ChatRoom room = findOrCreateRoom(myId, partnerId);
-        return ChatRoomResponse.of(room, myId, partner.getNickname(), null);
+        ChatMessage lastMessage = chatMessageRepository.findTopByRoomIdOrderByIdDesc(room.getId()).orElse(null);
+
+        return ChatRoomResponse.of(room, myId, partner.getNickname(), lastMessage);
     }
 
     /**
@@ -93,14 +98,15 @@ public class ChatService {
 
         List<ChatMessage> messages;
         if (afterId == null) {
+            // 리포지토리가 최신순으로 주므로 뒤집기만 하면 됩니다. (이미 정렬된 리스트라 재정렬 불필요)
             messages = new ArrayList<>(chatMessageRepository.findByRoomIdOrderByIdDesc(roomId, pageable));
-            messages.sort(Comparator.comparing(ChatMessage::getId));
+            Collections.reverse(messages);
         } else {
             messages = chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(roomId, afterId, pageable);
         }
 
         if (!messages.isEmpty()) {
-            room.markRead(myId, messages.get(messages.size() - 1).getId());
+            markRead(room, myId, messages.get(messages.size() - 1).getId());
         }
 
         return messages.stream()
@@ -114,9 +120,18 @@ public class ChatService {
         ChatMessage saved = chatMessageRepository.save(new ChatMessage(room, myId, content));
 
         // 보낸 사람 입장에서는 이미 읽은 메시지입니다.
-        room.markRead(myId, saved.getId());
+        markRead(room, myId, saved.getId());
 
         return ChatMessageResponse.of(saved, myId);
+    }
+
+    /** 읽음 위치가 뒤로 밀리지 않도록 원자적 UPDATE 로 처리합니다. */
+    private void markRead(ChatRoom room, Long userId, Long messageId) {
+        if (room.isUserA(userId)) {
+            chatRoomRepository.markReadForUserA(room.getId(), messageId);
+        } else {
+            chatRoomRepository.markReadForUserB(room.getId(), messageId);
+        }
     }
 
     private ChatRoom getRoomAsParticipant(Long roomId, Long userId) {
@@ -129,22 +144,17 @@ public class ChatService {
     }
 
     /**
-     * 조회 후 없으면 생성. 두 사람이 동시에 채팅을 시작하면 양쪽 다 "없음"을 보고 INSERT 하므로,
-     * 유니크 제약 위반을 잡아 상대가 먼저 만든 방을 다시 조회합니다.
+     * 두 사람이 동시에 채팅을 시작하면 양쪽 다 "방 없음"을 보고 INSERT 하므로 한쪽이 유니크 제약에 걸립니다.
+     * 이때는 <b>실패한 트랜잭션을 버리고 새 트랜잭션으로 다시 시도</b>합니다.
+     * 같은 트랜잭션에서 재조회하면 세션 오염과 스냅샷 문제로 복구되지 않습니다.
+     * ({@link ChatRoomRegistry} 참고)
      */
     private ChatRoom findOrCreateRoom(Long myId, Long partnerId) {
-        long smallerId = Math.min(myId, partnerId);
-        long largerId = Math.max(myId, partnerId);
-
-        return chatRoomRepository.findByUserAIdAndUserBId(smallerId, largerId)
-                .orElseGet(() -> {
-                    try {
-                        return chatRoomRepository.saveAndFlush(ChatRoom.between(myId, partnerId));
-                    } catch (DataIntegrityViolationException e) {
-                        return chatRoomRepository.findByUserAIdAndUserBId(smallerId, largerId)
-                                .orElseThrow(() -> new BusinessException(ChatErrorCode.ROOM_NOT_FOUND));
-                    }
-                });
+        try {
+            return chatRoomRegistry.findOrCreate(myId, partnerId);
+        } catch (DataIntegrityViolationException e) {
+            return chatRoomRegistry.findOrCreate(myId, partnerId);
+        }
     }
 
     private int normalizeSize(Integer size) {

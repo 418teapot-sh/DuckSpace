@@ -19,9 +19,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,6 +54,9 @@ class ChatServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ChatRoomRegistry chatRoomRegistry;
+
     @InjectMocks
     private ChatService chatService;
 
@@ -58,6 +64,7 @@ class ChatServiceTest {
 
     @BeforeEach
     void setUp() {
+        // ME(1) < PARTNER(2) 이므로 ME 가 userA 입니다.
         room = ChatRoom.between(ME, PARTNER);
         ReflectionTestUtils.setField(room, "id", ROOM_ID);
     }
@@ -76,6 +83,8 @@ class ChatServiceTest {
     private ChatMessage message(Long id, Long senderId, String content) {
         ChatMessage message = new ChatMessage(room, senderId, content);
         ReflectionTestUtils.setField(message, "id", id);
+        // 목 테스트에는 JPA Auditing 이 걸리지 않으므로 직접 채웁니다.
+        ReflectionTestUtils.setField(message, "createdAt", LocalDateTime.now());
         return message;
     }
 
@@ -84,34 +93,52 @@ class ChatServiceTest {
     class CreateOrGetRoom {
 
         @Test
-        void 방이_없으면_새로_만든다() {
+        void 방을_돌려주고_상대_닉네임을_채운다() {
             given(userRepository.findById(PARTNER)).willReturn(Optional.of(user(PARTNER, "덕질왕")));
-            given(chatRoomRepository.findByUserAIdAndUserBId(ME, PARTNER)).willReturn(Optional.empty());
-            given(chatRoomRepository.saveAndFlush(any(ChatRoom.class))).willReturn(room);
+            given(chatRoomRegistry.findOrCreate(ME, PARTNER)).willReturn(room);
+            given(chatMessageRepository.findTopByRoomIdOrderByIdDesc(ROOM_ID)).willReturn(Optional.empty());
 
             ChatRoomResponse response = chatService.createOrGetRoom(ME, PARTNER);
 
             assertThat(response.roomId()).isEqualTo(ROOM_ID);
             assertThat(response.partnerId()).isEqualTo(PARTNER);
             assertThat(response.partnerNickname()).isEqualTo("덕질왕");
-            verify(chatRoomRepository).saveAndFlush(any(ChatRoom.class));
+            assertThat(response.lastMessage()).isNull();
         }
 
         @Test
-        void 이미_방이_있으면_새로_만들지_않는다() {
+        void 이미_대화가_오간_방이면_마지막_메시지를_채워서_돌려준다() {
             given(userRepository.findById(PARTNER)).willReturn(Optional.of(user(PARTNER, "덕질왕")));
-            given(chatRoomRepository.findByUserAIdAndUserBId(ME, PARTNER)).willReturn(Optional.of(room));
+            given(chatRoomRegistry.findOrCreate(ME, PARTNER)).willReturn(room);
+            given(chatMessageRepository.findTopByRoomIdOrderByIdDesc(ROOM_ID))
+                    .willReturn(Optional.of(message(4L, PARTNER, "내일 3시 어떠세요?")));
+
+            ChatRoomResponse response = chatService.createOrGetRoom(ME, PARTNER);
+
+            assertThat(response.lastMessage()).isEqualTo("내일 3시 어떠세요?");
+            assertThat(response.lastMessageAt()).isNotNull();
+            assertThat(response.hasUnread()).isTrue();
+        }
+
+        @Test
+        void 동시_생성으로_유니크_위반이_나면_새_트랜잭션으로_다시_시도한다() {
+            given(userRepository.findById(PARTNER)).willReturn(Optional.of(user(PARTNER, "덕질왕")));
+            given(chatRoomRegistry.findOrCreate(ME, PARTNER))
+                    .willThrow(new DataIntegrityViolationException("uk_chat_room_participants"))
+                    .willReturn(room);
+            given(chatMessageRepository.findTopByRoomIdOrderByIdDesc(ROOM_ID)).willReturn(Optional.empty());
 
             ChatRoomResponse response = chatService.createOrGetRoom(ME, PARTNER);
 
             assertThat(response.roomId()).isEqualTo(ROOM_ID);
-            verify(chatRoomRepository, never()).saveAndFlush(any(ChatRoom.class));
+            verify(chatRoomRegistry, times(2)).findOrCreate(ME, PARTNER);
         }
 
         @Test
-        void 요청_순서가_반대여도_같은_방을_찾는다() {
+        void 요청_순서가_반대여도_같은_방을_돌려준다() {
             given(userRepository.findById(ME)).willReturn(Optional.of(user(ME, "나")));
-            given(chatRoomRepository.findByUserAIdAndUserBId(ME, PARTNER)).willReturn(Optional.of(room));
+            given(chatRoomRegistry.findOrCreate(PARTNER, ME)).willReturn(room);
+            given(chatMessageRepository.findTopByRoomIdOrderByIdDesc(ROOM_ID)).willReturn(Optional.empty());
 
             ChatRoomResponse response = chatService.createOrGetRoom(PARTNER, ME);
 
@@ -136,6 +163,7 @@ class ChatServiceTest {
                     assertThrows(BusinessException.class, () -> chatService.createOrGetRoom(ME, PARTNER));
 
             assertThat(exception.getErrorCode()).isEqualTo(ChatErrorCode.PARTNER_NOT_FOUND);
+            verify(chatRoomRegistry, never()).findOrCreate(anyLong(), anyLong());
         }
     }
 
@@ -188,7 +216,31 @@ class ChatServiceTest {
 
             chatService.getMessages(ME, ROOM_ID, 0L, null);
 
-            assertThat(room.lastReadMessageIdOf(ME)).isEqualTo(5L);
+            // ME 는 userA 이므로 A 쪽 읽음 위치가 갱신되어야 합니다.
+            verify(chatRoomRepository).markReadForUserA(ROOM_ID, 5L);
+            verify(chatRoomRepository, never()).markReadForUserB(anyLong(), anyLong());
+        }
+
+        @Test
+        void 상대방이_조회하면_반대쪽_읽음_위치가_갱신된다() {
+            given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
+            given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(0L), any(Pageable.class)))
+                    .willReturn(List.of(message(5L, ME, "다섯")));
+
+            chatService.getMessages(PARTNER, ROOM_ID, 0L, null);
+
+            verify(chatRoomRepository).markReadForUserB(ROOM_ID, 5L);
+            verify(chatRoomRepository, never()).markReadForUserA(anyLong(), anyLong());
+        }
+
+        @Test
+        void 새_메시지가_없으면_읽음_처리를_하지_않는다() {
+            given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
+            given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(9L), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            assertThat(chatService.getMessages(ME, ROOM_ID, 9L, null)).isEmpty();
+            verify(chatRoomRepository, never()).markReadForUserA(anyLong(), anyLong());
         }
 
         @Test
@@ -235,8 +287,8 @@ class ChatServiceTest {
 
             chatService.sendMessage(ME, ROOM_ID, "안녕하세요");
 
-            assertThat(room.lastReadMessageIdOf(ME)).isEqualTo(7L);
-            assertThat(room.lastReadMessageIdOf(PARTNER)).isNull();
+            verify(chatRoomRepository).markReadForUserA(ROOM_ID, 7L);
+            verify(chatRoomRepository, never()).markReadForUserB(anyLong(), anyLong());
         }
 
         @Test
@@ -289,7 +341,7 @@ class ChatServiceTest {
 
         @Test
         void 읽은_뒤에는_hasUnread가_false다() {
-            room.markRead(ME, 4L);
+            ReflectionTestUtils.setField(room, "userALastReadMessageId", 4L);
             given(chatRoomRepository.findAllByParticipant(ME)).willReturn(List.of(room));
             given(chatMessageRepository.findLastMessagesOfRooms(List.of(ROOM_ID)))
                     .willReturn(List.of(message(4L, PARTNER, "읽은 메시지")));

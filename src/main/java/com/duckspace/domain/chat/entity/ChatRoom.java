@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
@@ -29,7 +30,10 @@ import java.util.Objects;
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_chat_room_participants",
                 columnNames = {"user_a_id", "user_b_id"}
-        )
+        ),
+        // 유니크 제약은 user_a_id 가 선두라 user_b_id 단독 조건은 인덱스를 타지 못합니다.
+        // 방 목록 조회가 (user_a_id = ? or user_b_id = ?) 형태라 반대쪽에도 인덱스가 필요합니다.
+        indexes = @Index(name = "idx_chat_room_user_b", columnList = "user_b_id")
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -62,35 +66,35 @@ public class ChatRoom extends BaseTimeEntity {
 
     /** 순서에 상관없이 항상 같은 방이 되도록 두 id를 정렬해 생성합니다. */
     public static ChatRoom between(Long userId1, Long userId2) {
-        return new ChatRoom(Math.min(userId1, userId2), Math.max(userId1, userId2));
+        return new ChatRoom(smallerId(userId1, userId2), largerId(userId1, userId2));
+    }
+
+    /**
+     * 조회 조건도 저장과 똑같이 정렬해야 하므로, 정렬 규칙을 이 클래스 한 곳에서만 관리합니다.
+     * 호출부에서 Math.min/max 를 직접 쓰면 규칙이 바뀔 때 한쪽만 고치기 쉽습니다.
+     */
+    public static Long smallerId(Long userId1, Long userId2) {
+        return Math.min(userId1, userId2);
+    }
+
+    public static Long largerId(Long userId1, Long userId2) {
+        return Math.max(userId1, userId2);
     }
 
     public boolean hasParticipant(Long userId) {
         return Objects.equals(userAId, userId) || Objects.equals(userBId, userId);
     }
 
+    public boolean isUserA(Long userId) {
+        return Objects.equals(userAId, userId);
+    }
+
     /** 주어진 참여자의 상대방 id. */
     public Long partnerOf(Long userId) {
-        return Objects.equals(userAId, userId) ? userBId : userAId;
+        return isUserA(userId) ? userBId : userAId;
     }
 
     public Long lastReadMessageIdOf(Long userId) {
-        return Objects.equals(userAId, userId) ? userALastReadMessageId : userBLastReadMessageId;
-    }
-
-    /** 이미 더 뒤까지 읽은 상태라면 값을 되돌리지 않습니다. */
-    public void markRead(Long userId, Long messageId) {
-        if (messageId == null) {
-            return;
-        }
-        Long current = lastReadMessageIdOf(userId);
-        if (current != null && current >= messageId) {
-            return;
-        }
-        if (Objects.equals(userAId, userId)) {
-            this.userALastReadMessageId = messageId;
-        } else {
-            this.userBLastReadMessageId = messageId;
-        }
+        return isUserA(userId) ? userALastReadMessageId : userBLastReadMessageId;
     }
 }
