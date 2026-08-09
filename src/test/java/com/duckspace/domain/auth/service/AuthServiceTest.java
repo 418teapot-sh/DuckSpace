@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -53,7 +54,7 @@ class AuthServiceTest {
     void setUp() {
         jwtTokenProvider = new JwtTokenProvider(new JwtProperties(SECRET, 1000 * 60 * 30L, 1000 * 60 * 60 * 24 * 14L));
         authService = new AuthService(jwtTokenProvider, refreshTokenRepository, userRepository, passwordEncoder,
-                new LoginAttemptLimiter());
+                new LoginAttemptLimiter(), new RefreshTokenWriter(refreshTokenRepository));
     }
 
     private User localUser(String email, String encodedPassword) {
@@ -104,6 +105,29 @@ class AuthServiceTest {
             SignupRequest request = new SignupRequest("Test@DuckSpace.com", "password1234", "닉네임");
 
             assertThat(request.email()).isEqualTo("test@duckspace.com");
+        }
+
+        @Test
+        void 리프레시_토큰_INSERT가_동시성으로_실패해도_재조회로_복구한다() {
+            given(userRepository.findByEmail("test@duckspace.com")).willReturn(Optional.empty());
+            given(passwordEncoder.encode("password1234")).willReturn("encoded");
+            given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
+                User user = invocation.getArgument(0);
+                ReflectionTestUtils.setField(user, "id", 1L);
+                return user;
+            });
+
+            RefreshToken concurrentlyInserted = new RefreshToken(1L, "other-session-hash");
+            given(refreshTokenRepository.findByUserId(1L))
+                    .willReturn(Optional.empty())
+                    .willReturn(Optional.of(concurrentlyInserted));
+            given(refreshTokenRepository.saveAndFlush(any(RefreshToken.class)))
+                    .willThrow(new DataIntegrityViolationException("duplicate"));
+
+            TokenResponse response = authService.signup(
+                    new SignupRequest("test@duckspace.com", "password1234", "닉네임"));
+
+            assertThat(response.accessToken()).isNotBlank();
         }
     }
 

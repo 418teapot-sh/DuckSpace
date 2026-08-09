@@ -17,6 +17,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -27,6 +29,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final LoginAttemptLimiter loginAttemptLimiter;
+    private final RefreshTokenWriter refreshTokenWriter;
 
     @Transactional
     public TokenResponse signup(SignupRequest request) {
@@ -102,18 +105,26 @@ public class AuthService {
         return new TokenResponse(accessToken, refreshToken);
     }
 
+    /**
+     * 기존 행이 있으면 같은 트랜잭션에서 그냥 갱신합니다(update만이라 유니크 제약에 안 걸림).
+     * 없으면 {@link RefreshTokenWriter}로 INSERT를 별도 트랜잭션에 위임해서, 동시 요청으로
+     * 유니크 제약에 걸려도 이 트랜잭션(과 세션)은 오염되지 않게 하고 재조회로 복구합니다.
+     */
     private void saveRefreshToken(Long userId, String rawToken) {
         String tokenHash = RefreshTokenHasher.hash(rawToken);
-        RefreshToken entity = refreshTokenRepository.findByUserId(userId)
-                .map(saved -> saved.update(tokenHash))
-                .orElseGet(() -> new RefreshToken(userId, tokenHash));
+        Optional<RefreshToken> existing = refreshTokenRepository.findByUserId(userId);
+
+        if (existing.isPresent()) {
+            existing.get().update(tokenHash);
+            return;
+        }
 
         try {
-            refreshTokenRepository.saveAndFlush(entity);
+            refreshTokenWriter.insert(userId, tokenHash);
         } catch (DataIntegrityViolationException e) {
             RefreshToken concurrentlyInserted = refreshTokenRepository.findByUserId(userId)
                     .orElseThrow(() -> e);
-            refreshTokenRepository.saveAndFlush(concurrentlyInserted.update(tokenHash));
+            concurrentlyInserted.update(tokenHash);
         }
     }
 }
