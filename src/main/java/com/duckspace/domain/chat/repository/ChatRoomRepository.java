@@ -23,6 +23,11 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
      * <p>엔티티를 읽어서 수정하면, 같은 사용자가 탭 두 개로 동시에 폴링할 때
      * 나중에 커밋되는 쪽이 앞선 갱신을 덮어써 읽음 위치가 <b>과거로 되돌아갈</b> 수 있습니다.
      * {@code where} 조건으로 전진하는 경우에만 갱신되게 해서 그 역전을 막습니다.
+     *
+     * <p><b>주의:</b> {@code clearAutomatically = true} 라서 이 호출 이후에는
+     * 영속성 컨텍스트의 엔티티가 <b>전부 detach 됩니다.</b> 호출 뒤에 엔티티의 지연 로딩 필드
+     * (예: {@code message.getRoom()})에 접근하는 코드를 추가하면 조용히 깨지므로,
+     * 읽음 처리는 항상 해당 트랜잭션의 마지막 작업으로 두세요.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

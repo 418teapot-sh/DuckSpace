@@ -35,6 +35,8 @@ class ChatRoomRegistry {
     public ChatRoom findOrCreate(Long myId, Long partnerId) {
         return chatRoomRepository
                 .findByUserAIdAndUserBId(ChatRoom.smallerId(myId, partnerId), ChatRoom.largerId(myId, partnerId))
-                .orElseGet(() -> chatRoomRepository.save(ChatRoom.between(myId, partnerId)));
+                // IDENTITY 전략이라 save() 만으로도 즉시 INSERT 되지만,
+                // 유니크 위반을 이 트랜잭션 안에서 받는다는 의도를 드러내기 위해 saveAndFlush 를 씁니다.
+                .orElseGet(() -> chatRoomRepository.saveAndFlush(ChatRoom.between(myId, partnerId)));
     }
 }
