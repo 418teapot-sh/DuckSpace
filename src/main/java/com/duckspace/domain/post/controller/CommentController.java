@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -39,11 +40,14 @@ public class CommentController {
         return ApiResponse.success(commentService.create(authUser.getUserId(), postId, request));
     }
 
-    @Operation(summary = "댓글 목록", description = "최상위 댓글마다 답글이 중첩된 형태로 내려줍니다. 비밀댓글은 작성자/게시글 주인이 아니면 내용이 가려집니다.")
+    @Operation(summary = "댓글 목록", description = "최상위 댓글마다 답글이 중첩된 형태로 내려줍니다. 비밀댓글은 작성자/게시글 주인이 아니면 내용이 가려집니다. " +
+            "cursor를 비우면 처음부터, 값을 주면 그보다 나중에 달린 최상위 댓글부터 내려줍니다(마지막으로 받은 댓글 id를 cursor에 넣으면 됨).")
     @GetMapping("/posts/{postId}/comments")
     public ApiResponse<List<CommentResponse>> list(@AuthenticationPrincipal AuthUser authUser,
-                                                     @PathVariable Long postId) {
-        return ApiResponse.success(commentService.list(postId, authUser.getUserId()));
+                                                     @PathVariable Long postId,
+                                                     @RequestParam(required = false) Long cursor,
+                                                     @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(commentService.list(postId, authUser.getUserId(), cursor, size));
     }
 
     @Operation(summary = "댓글 삭제", description = "작성자만 가능합니다. 답글이 달린 댓글을 지우면 답글도 함께 삭제됩니다.")
@@ -53,11 +57,11 @@ public class CommentController {
         return ApiResponse.noContent();
     }
 
-    @Operation(summary = "댓글 신고", description = "본인 댓글은 신고할 수 없습니다. reason은 선택입니다.")
+    @Operation(summary = "댓글 신고", description = "본인 댓글은 신고할 수 없습니다. reason은 선택이며, 본문 자체를 생략해도 됩니다.")
     @PostMapping("/comments/{commentId}/report")
     public ApiResponse<Void> reportComment(@AuthenticationPrincipal AuthUser authUser,
                                             @PathVariable Long commentId,
-                                            @Valid @RequestBody ReportRequest request) {
+                                            @Valid @RequestBody(required = false) ReportRequest request) {
         reportService.reportComment(authUser.getUserId(), commentId, request);
         return ApiResponse.noContent();
     }
