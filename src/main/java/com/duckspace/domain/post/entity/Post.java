@@ -8,10 +8,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -22,7 +25,7 @@ import java.time.LocalDateTime;
  * 공통 필드만 여기 두고 나머지는 보드 타입별 테이블로 분리했습니다.
  */
 @Entity
-@Table(name = "post")
+@Table(name = "post", indexes = @Index(name = "idx_post_feed", columnList = "board_type, deleted_at, id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Post extends BaseTimeEntity {
@@ -42,6 +45,7 @@ public class Post extends BaseTimeEntity {
     private Long userId;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "board_type", nullable = false, updatable = false)
     private BoardType boardType;
 
