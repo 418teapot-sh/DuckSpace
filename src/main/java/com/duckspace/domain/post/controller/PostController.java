@@ -112,11 +112,11 @@ public class PostController {
         return ApiResponse.noContent();
     }
 
-    @Operation(summary = "게시글 신고", description = "본인 게시글은 신고할 수 없습니다. reason은 선택입니다.")
+    @Operation(summary = "게시글 신고", description = "본인 게시글은 신고할 수 없습니다. reason은 선택이며, 본문 자체를 생략해도 됩니다.")
     @PostMapping("/{postId}/report")
     public ApiResponse<Void> reportPost(@AuthenticationPrincipal AuthUser authUser,
                                          @PathVariable Long postId,
-                                         @Valid @RequestBody ReportRequest request) {
+                                         @Valid @RequestBody(required = false) ReportRequest request) {
         reportService.reportPost(authUser.getUserId(), postId, request);
         return ApiResponse.noContent();
     }
