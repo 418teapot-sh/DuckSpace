@@ -101,6 +101,15 @@ class PostServiceTest {
             verify(postImageRepository, times(2)).save(any());
             verify(postHashtagRepository, times(1)).save(any());
         }
+
+        @Test
+        void content가_빈_문자열이면_예외() {
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> postService.createCasual(10L, new CasualPostRequest(" ", null, null)));
+
+            assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.CONTENT_REQUIRED);
+            verify(postRepository, never()).save(any());
+        }
     }
 
     @Nested
@@ -218,6 +227,27 @@ class PostServiceTest {
 
             verify(postImageRepository, never()).deleteByPost_Id(any());
             verify(postHashtagRepository, never()).deleteByPost_Id(any());
+        }
+
+        @Test
+        void content를_안_보내면_기존_값을_그대로_둔다() {
+            Post post = casualPost(1L, 10L);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+
+            postService.updateCasual(1L, 10L, new CasualPostRequest(null, List.of("new.png"), null));
+
+            assertThat(post.getContent()).isEqualTo("본문");
+        }
+
+        @Test
+        void content가_빈_문자열이면_예외() {
+            Post post = casualPost(1L, 10L);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> postService.updateCasual(1L, 10L, new CasualPostRequest(" ", null, null)));
+
+            assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.CONTENT_REQUIRED);
         }
 
         @Test
