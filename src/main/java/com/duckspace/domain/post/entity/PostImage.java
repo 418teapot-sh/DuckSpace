@@ -21,6 +21,7 @@ import lombok.NoArgsConstructor;
 public class PostImage {
 
     public static final int MAX_COUNT = 4;
+    public static final int IMAGE_URL_MAX_LENGTH = 255;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,7 +32,7 @@ public class PostImage {
     @JoinColumn(name = "post_id", nullable = false, updatable = false)
     private Post post;
 
-    @Column(name = "image_url", nullable = false)
+    @Column(name = "image_url", nullable = false, length = IMAGE_URL_MAX_LENGTH)
     private String imageUrl;
 
     @Column(name = "sort_order", nullable = false)
