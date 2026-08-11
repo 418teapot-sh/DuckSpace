@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -19,11 +19,22 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Build jar
         run: |
           chmod +x gradlew
           ./gradlew bootJar -x test --no-daemon
+
+      - name: Backup current jar
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            JAR=/home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar
+            [ -f "$JAR" ] && cp "$JAR" "$JAR.bak" || true
 
       - name: Copy jar to EC2
         uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
@@ -42,11 +53,15 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            set -e
+            JAR=/home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar
             sudo systemctl restart duckspace
             for i in $(seq 1 20); do
               curl -sf http://localhost:8080/actuator/health > /dev/null && echo "healthy" && exit 0
               sleep 3
             done
-            echo "헬스체크 실패"
+            echo "헬스체크 실패 — 이전 버전으로 롤백합니다"
+            if [ -f "$JAR.bak" ]; then
+              cp "$JAR.bak" "$JAR"
+              sudo systemctl restart duckspace
+            fi
             exit 1

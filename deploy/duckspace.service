@@ -1,0 +1,16 @@
+# EC2 배포 경로: /etc/systemd/system/duckspace.service
+# 설치: sudo cp deploy/duckspace.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable duckspace
+[Unit]
+Description=DuckSpace Spring Boot App
+After=network.target docker.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/DuckSpace
+EnvironmentFile=/etc/duckspace/app.env
+ExecStart=/usr/bin/java -jar /home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
