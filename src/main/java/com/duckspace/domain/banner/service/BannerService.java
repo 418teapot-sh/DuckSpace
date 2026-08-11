@@ -1,5 +1,6 @@
 package com.duckspace.domain.banner.service;
 
+import com.duckspace.domain.banner.client.BannerSummaryClient;
 import com.duckspace.domain.banner.repository.BannerRepository;
 import com.duckspace.domain.banner.dto.response.BannerListResponse;
 import com.duckspace.domain.banner.dto.response.BannerResponse;
@@ -22,6 +23,7 @@ import com.duckspace.global.exception.BusinessException;
 public class BannerService {
 
     private final BannerRepository bannerRepository;
+    private final BannerSummaryClient bannerSummaryClient;
 
     public BannerListResponse getActiveBanners() {
         LocalDateTime now = LocalDateTime.now();
@@ -33,7 +35,6 @@ public class BannerService {
         return BannerListResponse.of(banners);
     }
 
-    /*
     public List<BannerResponse> getAllBannersForAdmin() {
         return bannerRepository.findAllByOrderBySortOrderAsc()
                 .stream()
@@ -45,9 +46,14 @@ public class BannerService {
     public BannerResponse createBanner(BannerCreateRequest request) {
         validatePeriod(request.startAt(), request.endAt());
 
+        String aiSummary = bannerSummaryClient.summarizeBanner(
+                request.title(), request.description(), request.startAt(), request.endAt());
+
         Banner banner = Banner.builder()
                 .imageUrl(request.imageUrl())
                 .title(request.title())
+                .description(request.description())
+                .aiSummary(aiSummary)
                 .popupId(request.popupId())
                 .startAt(request.startAt())
                 .endAt(request.endAt())
@@ -61,10 +67,15 @@ public class BannerService {
     public BannerResponse updateBanner(Long bannerId, BannerUpdateRequest request) {
         validatePeriod(request.startAt(), request.endAt());
 
+        String aiSummary = bannerSummaryClient.summarizeBanner(
+                request.title(), request.description(), request.startAt(), request.endAt());
+
         Banner banner = getBannerOrThrow(bannerId);
         banner.update(
                 request.imageUrl(),
                 request.title(),
+                request.description(),
+                aiSummary,
                 request.popupId(),
                 request.startAt(),
                 request.endAt(),
@@ -88,5 +99,4 @@ public class BannerService {
             throw new BusinessException(BannerErrorCode.INVALID_BANNER_PERIOD);
         }
     }
-    */
 }

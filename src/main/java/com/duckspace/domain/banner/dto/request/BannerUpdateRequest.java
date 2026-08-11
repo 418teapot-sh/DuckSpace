@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public record BannerUpdateRequest(
         @NotBlank String imageUrl,
         @NotBlank String title,
+        String description,
         @NotNull Long popupId,
         @NotNull LocalDateTime startAt,
         @NotNull LocalDateTime endAt,

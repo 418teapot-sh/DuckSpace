@@ -31,15 +31,11 @@ public class BannerController {
         return ApiResponse.success(bannerService.getActiveBanners());
     }
 
-
-    //주석 처리는 혹시나 관리자용을 만든다면 필요해서 냅둡니다
-    /*    @GetMapping("/api/admin/banners")
+    @GetMapping("/api/admin/banners")
     public ApiResponse<List<BannerResponse>> getAllBanners() {
         return ApiResponse.success(bannerService.getAllBannersForAdmin());
     }
-    */
 
-    /*
     @PostMapping("/api/admin/banners")
     public ApiResponse<BannerResponse> createBanner(@Valid @RequestBody BannerCreateRequest request) {
         return ApiResponse.success(bannerService.createBanner(request));
@@ -56,5 +52,4 @@ public class BannerController {
         bannerService.deleteBanner(bannerId);
         return ApiResponse.noContent();
     }
-    */
 }
