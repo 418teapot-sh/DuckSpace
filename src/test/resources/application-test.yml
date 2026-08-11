@@ -6,6 +6,10 @@
 jwt:
   secret: test-only-secret-key-do-not-use-in-production-0123456789
 
+openai:
+  api-key: test-dummy-key
+  model: gpt-4o-mini
+
 spring:
   datasource:
     url: jdbc:h2:mem:duckspace-test;MODE=MySQL;DB_CLOSE_DELAY=-1

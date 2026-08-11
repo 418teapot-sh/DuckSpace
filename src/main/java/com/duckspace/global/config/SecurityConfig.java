@@ -35,6 +35,9 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
+            "/api/banners",
+            "/api/popups",
+            "/api/popups/**",
             "/actuator/**",
             "/swagger-ui/**",
             "/swagger-ui.html",

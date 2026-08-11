@@ -23,3 +23,8 @@ jwt:
 cors:
   # 배포 시 CORS_ALLOWED_ORIGINS로 덮어쓰세요. 와일드카드(*) 사용 가능.
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://*.vercel.app}
+
+openai:
+  # 기본값을 두지 않습니다. OPENAI_API_KEY를 빠뜨리면 부팅이 실패하도록 합니다. (local 값은 application-local.yml)
+  api-key: ${OPENAI_API_KEY}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
