@@ -9,6 +9,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -65,10 +66,12 @@ class HomeApiSmokeTest {
                   "sortOrder": 0
                 }
                 """.formatted(popupId);
-        mockMvc.perform(post("/api/admin/banners")
+        String bannerResponse = mockMvc.perform(post("/api/admin/banners")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(bannerCreateBody))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long bannerId = com.jayway.jsonpath.JsonPath.<Number>read(bannerResponse, "$.data.id").longValue();
 
         String exhibitionCreateBody = """
                 {
@@ -80,17 +83,26 @@ class HomeApiSmokeTest {
                   ]
                 }
                 """;
-        mockMvc.perform(post("/api/admin/exhibitions")
+        String exhibitionResponse = mockMvc.perform(post("/api/admin/exhibitions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(exhibitionCreateBody))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(get("/api/home"))
-                .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.banners[?(@.title == '홈테스트 배너')]").exists())
-                .andExpect(jsonPath("$.data.banners[?(@.popupId == %d)]".formatted(popupId)).exists())
-                .andExpect(jsonPath("$.data.upcomingPopups[?(@.title == '홈테스트 팝업')]").exists())
-                .andExpect(jsonPath("$.data.popularExhibitions[?(@.title == '홈테스트 전시장')]").exists());
+                .andReturn().getResponse().getContentAsString();
+        long exhibitionId = com.jayway.jsonpath.JsonPath.<Number>read(exhibitionResponse, "$.data.id").longValue();
+
+        try {
+            mockMvc.perform(get("/api/home"))
+                    .andDo(print())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.banners[?(@.title == '홈테스트 배너')]").exists())
+                    .andExpect(jsonPath("$.data.banners[?(@.popupId == %d)]".formatted(popupId)).exists())
+                    .andExpect(jsonPath("$.data.upcomingPopups[?(@.title == '홈테스트 팝업')]").exists())
+                    .andExpect(jsonPath("$.data.popularExhibitions[?(@.title == '홈테스트 전시장')]").exists());
+        } finally {
+            // 다른 도메인의 테스트가 같은 인메모리 DB를 공유하므로, 만든 데이터는 반드시 정리한다.
+            mockMvc.perform(delete("/api/admin/banners/" + bannerId));
+            mockMvc.perform(delete("/api/admin/popups/" + popupId));
+            mockMvc.perform(delete("/api/admin/exhibitions/" + exhibitionId));
+        }
     }
 }
