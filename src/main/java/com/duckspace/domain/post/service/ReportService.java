@@ -28,8 +28,9 @@ public class ReportService {
         if (post.isOwnedBy(reporterId)) {
             throw new BusinessException(PostErrorCode.CANNOT_REPORT_OWN_CONTENT);
         }
+        requireNotAlreadyReported(reporterId, ReportTargetType.POST, postId);
 
-        reportRepository.save(new Report(reporterId, ReportTargetType.POST, postId, request.reason()));
+        reportRepository.save(new Report(reporterId, ReportTargetType.POST, postId, reasonOf(request)));
     }
 
     @Transactional
@@ -39,7 +40,18 @@ public class ReportService {
         if (comment.isOwnedBy(reporterId)) {
             throw new BusinessException(PostErrorCode.CANNOT_REPORT_OWN_CONTENT);
         }
+        requireNotAlreadyReported(reporterId, ReportTargetType.COMMENT, commentId);
 
-        reportRepository.save(new Report(reporterId, ReportTargetType.COMMENT, commentId, request.reason()));
+        reportRepository.save(new Report(reporterId, ReportTargetType.COMMENT, commentId, reasonOf(request)));
+    }
+
+    private void requireNotAlreadyReported(Long reporterId, ReportTargetType targetType, Long targetId) {
+        if (reportRepository.existsByReporterIdAndTargetTypeAndTargetId(reporterId, targetType, targetId)) {
+            throw new BusinessException(PostErrorCode.ALREADY_REPORTED);
+        }
+    }
+
+    private String reasonOf(ReportRequest request) {
+        return request == null ? null : request.reason();
     }
 }
