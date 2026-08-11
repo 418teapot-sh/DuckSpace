@@ -14,6 +14,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * 교환 품목 한 건. {@link TradeItemSide#OFFERED}(내가 가진 굿즈) /
@@ -25,6 +27,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TradeItem {
 
+    public static final int IMAGE_URL_MAX_LENGTH = 255;
+    public static final int ITEM_NAME_MAX_LENGTH = 50;
+    public static final int BRAND_MAX_LENGTH = 50;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", updatable = false)
@@ -35,20 +41,22 @@ public class TradeItem {
     private ExchangeDetail exchangeDetail;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "side", nullable = false, updatable = false)
     private TradeItemSide side;
 
-    @Column(name = "image_url")
+    @Column(name = "image_url", length = IMAGE_URL_MAX_LENGTH)
     private String imageUrl;
 
-    @Column(name = "item_name", nullable = false)
+    @Column(name = "item_name", nullable = false, length = ITEM_NAME_MAX_LENGTH)
     private String itemName;
 
-    @Column(name = "brand")
+    @Column(name = "brand", length = BRAND_MAX_LENGTH)
     private String brand;
 
     /** OFFERED(내가 가진 굿즈)만 사용합니다. WANTED는 null. */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "item_condition")
     private ItemCondition condition;
 
