@@ -11,6 +11,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -56,7 +57,11 @@ jobs:
             JAR=/home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar
             sudo systemctl restart duckspace
             for i in $(seq 1 20); do
-              curl -sf http://localhost:8080/actuator/health > /dev/null && echo "healthy" && exit 0
+              if curl -sf http://localhost:8080/actuator/health > /dev/null; then
+                echo "${{ github.sha }}" > /home/ubuntu/DuckSpace/CURRENT_SHA
+                echo "healthy"
+                exit 0
+              fi
               sleep 3
             done
             echo "헬스체크 실패 — 이전 버전으로 롤백합니다"
