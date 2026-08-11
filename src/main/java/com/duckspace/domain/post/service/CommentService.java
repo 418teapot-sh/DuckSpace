@@ -10,9 +10,12 @@ import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -22,6 +25,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CommentService {
+
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 50;
 
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
@@ -37,23 +43,27 @@ public class CommentService {
         return comment.getId();
     }
 
-    public List<CommentResponse> list(Long postId, Long viewerId) {
+    /** 최상위 댓글 기준으로 커서 페이지네이션합니다. cursor를 비우면 처음부터, 값을 주면 그 이후 댓글을 내려줍니다. */
+    public List<CommentResponse> list(Long postId, Long viewerId, Long cursor, Integer size) {
         postService.getPost(postId);
-        List<Comment> comments = commentRepository.findByPost_IdOrderByIdAsc(postId);
-        if (comments.isEmpty()) {
+        List<Comment> topLevel = commentRepository.findTopLevelByPostId(postId, cursor, pageable(size));
+        if (topLevel.isEmpty()) {
             return List.of();
         }
 
-        List<Long> authorIds = comments.stream().map(Comment::getUserId).distinct().toList();
+        List<Long> topLevelIds = topLevel.stream().map(Comment::getId).toList();
+        List<Comment> replies = commentRepository.findByParent_IdInOrderByIdAsc(topLevelIds);
+
+        List<Comment> all = new ArrayList<>(topLevel);
+        all.addAll(replies);
+        List<Long> authorIds = all.stream().map(Comment::getUserId).distinct().toList();
         Map<Long, String> nicknames = userRepository.findAllById(authorIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getNickname));
 
-        Map<Long, List<Comment>> repliesByParentId = comments.stream()
-                .filter(Comment::isReply)
-                .collect(Collectors.groupingBy(comment -> comment.getParent().getId()));
+        Map<Long, List<Comment>> repliesByParentId = replies.stream()
+                .collect(Collectors.groupingBy(reply -> reply.getParent().getId()));
 
-        return comments.stream()
-                .filter(comment -> !comment.isReply())
+        return topLevel.stream()
                 .map(comment -> toResponse(comment, viewerId, nicknames, repliesByParentId))
                 .toList();
     }
@@ -103,5 +113,16 @@ public class CommentService {
                 comment.isSecret(),
                 comment.getCreatedAt(),
                 replies);
+    }
+
+    private Pageable pageable(Integer size) {
+        return PageRequest.of(0, normalizeSize(size));
+    }
+
+    private int normalizeSize(Integer size) {
+        if (size == null || size <= 0) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(size, MAX_PAGE_SIZE);
     }
 }
