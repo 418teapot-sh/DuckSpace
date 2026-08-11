@@ -56,6 +56,7 @@ public class PostService {
 
     @Transactional
     public Long createCasual(Long userId, CasualPostRequest request) {
+        requireContent(request.content());
         Post post = postRepository.save(Post.createCasual(userId, request.content()));
         saveImages(post, request.imageUrls());
         saveHashtags(post, request.hashtags());
@@ -176,13 +177,16 @@ public class PostService {
                 likeCount, liked, commentCount, imageUrls, hashtags, exchangeInfo);
     }
 
-    /** PATCH는 부분 수정입니다. imageUrls/hashtags를 아예 안 보내면(null) 기존 값을 그대로 둡니다. */
+    /** PATCH는 부분 수정입니다. content/imageUrls/hashtags를 아예 안 보내면(null) 기존 값을 그대로 둡니다. */
     @Transactional
     public void updateCasual(Long postId, Long userId, CasualPostRequest request) {
         Post post = getOwnedPost(postId, userId);
         requireBoardType(post, BoardType.CASUAL);
 
-        post.updateContent(request.content());
+        if (request.content() != null) {
+            requireContent(request.content());
+            post.updateContent(request.content());
+        }
 
         if (request.imageUrls() != null) {
             postImageRepository.deleteByPost_Id(postId);
@@ -234,6 +238,12 @@ public class PostService {
     private void requireBoardType(Post post, BoardType expected) {
         if (post.getBoardType() != expected) {
             throw new BusinessException(PostErrorCode.INVALID_BOARD_TYPE);
+        }
+    }
+
+    private void requireContent(String content) {
+        if (content == null || content.isBlank()) {
+            throw new BusinessException(PostErrorCode.CONTENT_REQUIRED);
         }
     }
 
