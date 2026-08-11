@@ -23,6 +23,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -112,7 +113,7 @@ class CommentServiceTest {
             given(postService.getPost(1L)).willThrow(new BusinessException(PostErrorCode.POST_NOT_FOUND));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> commentService.list(1L, 999L));
+                    () -> commentService.list(1L, 999L, null, null));
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.POST_NOT_FOUND);
         }
@@ -121,11 +122,11 @@ class CommentServiceTest {
         void 비밀댓글은_작성자와_게시글_주인만_내용을_볼_수_있다() {
             Post post = post(1L, 100L);
             Comment secret = comment(5L, post, 20L, null, "비밀 내용", true);
-            given(commentRepository.findByPost_IdOrderByIdAsc(1L)).willReturn(List.of(secret));
+            given(commentRepository.findTopLevelByPostId(eq(1L), any(), any())).willReturn(List.of(secret));
 
-            List<CommentResponse> asStranger = commentService.list(1L, 999L);
-            List<CommentResponse> asAuthor = commentService.list(1L, 20L);
-            List<CommentResponse> asPostOwner = commentService.list(1L, 100L);
+            List<CommentResponse> asStranger = commentService.list(1L, 999L, null, null);
+            List<CommentResponse> asAuthor = commentService.list(1L, 20L, null, null);
+            List<CommentResponse> asPostOwner = commentService.list(1L, 100L, null, null);
 
             assertThat(asStranger.get(0).content()).isEqualTo("비밀 댓글입니다.");
             assertThat(asAuthor.get(0).content()).isEqualTo("비밀 내용");
@@ -137,13 +138,23 @@ class CommentServiceTest {
             Post post = post(1L, 100L);
             Comment parent = comment(5L, post, 10L, null, "부모", false);
             Comment reply = comment(6L, post, 11L, parent, "답글", false);
-            given(commentRepository.findByPost_IdOrderByIdAsc(1L)).willReturn(List.of(parent, reply));
+            given(commentRepository.findTopLevelByPostId(eq(1L), any(), any())).willReturn(List.of(parent));
+            given(commentRepository.findByParent_IdInOrderByIdAsc(List.of(5L))).willReturn(List.of(reply));
 
-            List<CommentResponse> responses = commentService.list(1L, 999L);
+            List<CommentResponse> responses = commentService.list(1L, 999L, null, null);
 
             assertThat(responses).hasSize(1);
             assertThat(responses.get(0).replies()).hasSize(1);
             assertThat(responses.get(0).replies().get(0).content()).isEqualTo("답글");
+        }
+
+        @Test
+        void cursor와_size를_그대로_페이지네이션에_전달한다() {
+            given(commentRepository.findTopLevelByPostId(eq(1L), eq(5L), any())).willReturn(List.of());
+
+            commentService.list(1L, 999L, 5L, 10);
+
+            verify(commentRepository).findTopLevelByPostId(eq(1L), eq(5L), any());
         }
     }
 
