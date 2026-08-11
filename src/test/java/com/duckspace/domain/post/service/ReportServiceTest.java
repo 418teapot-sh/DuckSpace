@@ -3,6 +3,7 @@ package com.duckspace.domain.post.service;
 import com.duckspace.domain.post.dto.request.ReportRequest;
 import com.duckspace.domain.post.entity.Comment;
 import com.duckspace.domain.post.entity.Post;
+import com.duckspace.domain.post.entity.ReportTargetType;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
 import com.duckspace.domain.post.repository.ReportRepository;
@@ -76,6 +77,28 @@ class ReportServiceTest {
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.CANNOT_REPORT_OWN_CONTENT);
             verify(reportRepository, never()).save(any());
+        }
+
+        @Test
+        void 이미_신고한_글이면_예외() {
+            given(postService.getPost(1L)).willReturn(post(1L, 100L));
+            given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(999L, ReportTargetType.POST, 1L))
+                    .willReturn(true);
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> reportService.reportPost(999L, 1L, new ReportRequest(null)));
+
+            assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.ALREADY_REPORTED);
+            verify(reportRepository, never()).save(any());
+        }
+
+        @Test
+        void 본문_없이_신고해도_저장된다() {
+            given(postService.getPost(1L)).willReturn(post(1L, 100L));
+
+            reportService.reportPost(999L, 1L, null);
+
+            verify(reportRepository).save(any());
         }
     }
 
