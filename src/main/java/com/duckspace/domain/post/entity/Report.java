@@ -9,13 +9,19 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /** 게시글/댓글 신고. targetType + targetId로 대상을 가리킵니다 (신고 대상 테이블에 FK를 걸지 않아 둘을 하나로 다룰 수 있음). */
 @Entity
-@Table(name = "report")
+@Table(name = "report",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_report_reporter_target",
+                columnNames = {"reporter_id", "target_type", "target_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Report extends BaseTimeEntity {
@@ -31,6 +37,7 @@ public class Report extends BaseTimeEntity {
     private Long reporterId;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "target_type", nullable = false, updatable = false)
     private ReportTargetType targetType;
 
@@ -41,6 +48,7 @@ public class Report extends BaseTimeEntity {
     private String reason;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", nullable = false)
     private ReportStatus status;
 
