@@ -13,6 +13,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * 교환 글의 부가 정보. {@link Post}와 1:1이며 postId를 PK 겸 FK로 공유합니다.
@@ -35,10 +37,12 @@ public class ExchangeDetail {
     private Post post;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "method", nullable = false)
     private ExchangeMethod method;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", nullable = false)
     private ExchangeStatus status;
 
