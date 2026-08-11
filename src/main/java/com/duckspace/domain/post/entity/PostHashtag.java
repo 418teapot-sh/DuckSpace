@@ -21,6 +21,7 @@ import lombok.NoArgsConstructor;
 public class PostHashtag {
 
     public static final int TAG_MAX_LENGTH = 20;
+    public static final int MAX_COUNT = 10;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
