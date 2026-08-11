@@ -14,6 +14,15 @@ Spring Boot **4.1** / Java 21입니다. Boot 3.x와 다른 점이 있어서 습�
 - 웹 스타터는 `spring-boot-starter-web` 이 아니라 **`spring-boot-starter-webmvc`** 입니다.
 - 테스트 스타터가 `spring-boot-starter-test` 하나가 아니라 모듈별로 나뉘어 있습니다.
   (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-security-test` 등)
+- **테스트 슬라이스 어노테이션의 패키지가 전부 바뀌었습니다.** `org.springframework.boot.test.autoconfigure.*`
+  로 임포트하면 "package does not exist" 가 납니다. `@DataJpaTest` 와 `TestEntityManager` 는
+  서로 다른 패키지에 있으니 특히 주의하세요.
+  ```java
+  import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+  import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+  ```
+  `@DataJpaTest` 는 `@Configuration` 을 스캔하지 않아서 Auditing 이 안 걸립니다.
+  `createdAt` 이 not null 이므로 `@Import(JpaAuditingConfig.class)` 를 같이 붙여야 합니다.
 - 서드파티 라이브러리를 추가할 때는 Boot 4 호환 여부를 먼저 확인하세요. 아직 대응 안 된 것이 있습니다.
 
 ---
