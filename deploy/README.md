@@ -67,3 +67,14 @@ sudo nginx -t && sudo systemctl reload nginx
 기본 8GiB 디스크로는 부족해서 20GiB로 확장(`growpart` + `resize2fs`), 2GiB 스왑을 추가해뒀습니다.
 빌드는 GitHub Actions 러너에서 하고 EC2에는 jar만 전달하므로, 서버에서 직접 `./gradlew`를
 실행하지 않는 한 이 여유분으로 충분합니다.
+
+## 7. 지금 서버에 어떤 커밋이 떠 있는지 확인하기
+
+헬스체크를 통과한 배포마다 `/home/ubuntu/DuckSpace/CURRENT_SHA`에 커밋 SHA를 기록합니다.
+
+```bash
+cat /home/ubuntu/DuckSpace/CURRENT_SHA
+```
+
+롤백(헬스체크 실패로 이전 jar로 되돌아간 경우)이 일어나면 이 파일은 갱신되지 않으므로,
+직전 성공 배포의 SHA로 남아있습니다.
