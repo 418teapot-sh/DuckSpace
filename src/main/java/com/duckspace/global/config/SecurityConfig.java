@@ -35,6 +35,7 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
+            "/api/home",
             "/api/banners",
             "/api/popups",
             "/api/popups/**",
@@ -57,6 +58,8 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()   // CORS preflight
+                        // 좋아요(POST)는 인증이 필요해서 조회(GET)만 따로 공개 처리
+                        .requestMatchers(HttpMethod.GET, "/api/exhibitions", "/api/exhibitions/**").permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated()
                 )
