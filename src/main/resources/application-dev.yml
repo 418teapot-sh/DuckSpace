@@ -8,3 +8,8 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
+
+server:
+  # nginx가 HTTPS를 종료하고 Spring에는 HTTP로 전달합니다.
+  # 없으면 redirect_uri 등이 http://로 잘못 생성됩니다.
+  forward-headers-strategy: framework

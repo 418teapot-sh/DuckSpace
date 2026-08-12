@@ -47,3 +47,9 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// 배포 스크립트가 jar 경로를 고정값으로 참조합니다(systemd ExecStart 등).
+// version이 바뀌어도 파일명이 안 바뀌어야 그 경로들이 조용히 깨지지 않습니다.
+bootJar {
+	archiveFileName = 'duckspace.jar'
+}
