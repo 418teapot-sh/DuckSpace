@@ -98,7 +98,7 @@ class ExhibitionServiceTest {
     class GetDetail {
 
         @Test
-        void 슬롯에_놓인_굿즈를_모두_돌려준다() {
+        void 배치된_굿즈를_모두_돌려준다() {
             given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
             given(exhibitionItemRepository.findByExhibitionIdAndStatusInOrderByIdAsc(eq(EXHIBITION_ID), any()))
                     .willReturn(List.of(itemOf(exhibition, "a.png"),

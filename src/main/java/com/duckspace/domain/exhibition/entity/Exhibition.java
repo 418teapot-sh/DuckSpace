@@ -15,10 +15,10 @@ import lombok.NoArgsConstructor;
 import java.util.Objects;
 
 /**
- * 장식장. 고정된 배경(책장·협탁 등) 위에 슬롯이 있고, 슬롯마다 굿즈가 하나씩 놓입니다.
+ * 장식장. 배경 위에 굿즈를 자유롭게 배치합니다.
  *
- * <p>슬롯의 화면 좌표는 프론트가 고정으로 관리하므로 서버는 슬롯 식별자만 압니다.
- * ({@link ExhibitionItem#getSlotId()})
+ * <p>배경 이미지는 프론트가 {@link #getThemeCode()} 로 찾고, 굿즈의 위치·크기는
+ * {@link ExhibitionItem} 이 배경 대비 비율로 들고 있습니다.
  */
 @Entity
 @Table(
