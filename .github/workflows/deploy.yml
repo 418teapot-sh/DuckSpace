@@ -27,34 +27,41 @@ jobs:
           chmod +x gradlew
           ./gradlew bootJar -x test --no-daemon
 
-      - name: Backup current jar
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            JAR=/home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar
-            [ -f "$JAR" ] && cp "$JAR" "$JAR.bak" || true
-
-      - name: Copy jar to EC2
+      - name: Upload new jar to staging
         uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "build/libs/*.jar"
-          target: "/home/ubuntu/DuckSpace/build/libs/"
+          target: "/home/ubuntu/DuckSpace/build/libs/staging/"
           strip_components: 2
 
-      - name: Restart service and health check
+      - name: Swap in new jar, restart, and health check
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            JAR=/home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar
+            set -e
+            JAR=/home/ubuntu/DuckSpace/build/libs/duckspace.jar
+            NEW_JAR=/home/ubuntu/DuckSpace/build/libs/staging/duckspace.jar
+
+            # 전송이 중간에 끊기면 손상된 jar가 남을 수 있으므로, 백업·교체 전에 먼저 검증합니다.
+            # 여기서 걸러야 손상된 파일이 롤백 대상(.bak)이나 실행 대상으로 넘어가지 않습니다.
+            python3 -m zipfile -t "$NEW_JAR"
+
+            # 지금 떠 있는 jar만 백업합니다(이미 서비스 중이므로 정상이라고 볼 수 있음).
+            # set -e 라서 cp 가 진짜로 실패하면(디스크 풀 등) 여기서 스크립트가 멈추고
+            # 스텝이 실패로 표시됩니다 — 예전처럼 "|| true"로 삼키지 않습니다.
+            if [ -f "$JAR" ]; then
+              cp "$JAR" "$JAR.bak"
+            fi
+
+            # 같은 파일시스템 내 mv는 원자적이라, 교체 도중 half-written 파일이 노출되지 않습니다.
+            mv "$NEW_JAR" "$JAR"
+
             sudo systemctl restart duckspace
             for i in $(seq 1 20); do
               if curl -sf http://localhost:8080/actuator/health > /dev/null; then

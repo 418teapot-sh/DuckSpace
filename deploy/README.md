@@ -13,8 +13,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable duckspace
 ```
 
-- jar 경로: `/home/ubuntu/DuckSpace/build/libs/duckspace-0.0.1-SNAPSHOT.jar`
-  (deploy.yml이 scp로 이 경로에 덮어씀 — 디렉터리는 미리 만들어져 있어야 함: `mkdir -p /home/ubuntu/DuckSpace/build/libs`)
+- jar 경로: `/home/ubuntu/DuckSpace/build/libs/duckspace.jar`
+  (파일명이 `build.gradle`의 `bootJar.archiveFileName`으로 고정되어 있어 `version`이 바뀌어도
+  안 바뀜 — 배포 스크립트·systemd가 전부 이 경로를 고정값으로 참조하기 때문)
+  - deploy.yml이 새 jar를 `build/libs/staging/`에 먼저 올린 뒤 검증·백업까지 마치고 이 경로로
+    원자적으로 교체함(`mv`). 두 디렉터리 모두 미리 만들어져 있어야 함:
+    `mkdir -p /home/ubuntu/DuckSpace/build/libs/staging`
+  - jar 무결성 검증에 `python3 -m zipfile -t`를 씀. AWS 기본 Ubuntu AMI는 cloud-init 구동에
+    python3 이 필요해 기본 포함되어 있음 — 다른 AMI로 바꾸면 이 전제가 깨질 수 있음.
 - `--spring.profiles.active=dev`를 커맨드라인 인자로 명시함. 이게 빠지면 `application.yml`의
   `spring.profiles.default: local`이 적용되어 `application-local.yml`에 하드코딩된
   로컬 전용 JWT 시크릿으로 뜨는 보안 사고가 날 수 있음 — **절대 빼면 안 됨.**
