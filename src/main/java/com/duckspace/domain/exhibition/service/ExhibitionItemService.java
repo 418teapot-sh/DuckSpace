@@ -2,6 +2,7 @@ package com.duckspace.domain.exhibition.service;
 
 import com.duckspace.domain.exhibition.dto.request.AddItemRequest;
 import com.duckspace.domain.exhibition.dto.request.UpdatePositionRequest;
+import com.duckspace.domain.exhibition.dto.request.UploadItemRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemResponse;
 import com.duckspace.domain.exhibition.entity.Exhibition;
@@ -12,12 +13,16 @@ import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -28,11 +33,15 @@ public class ExhibitionItemService {
     private static final int MAX_PAGE_SIZE = 50;
     private static final int DEFAULT_PAGE_SIZE = 20;
 
+    /** 브라우저가 보내는 이미지 MIME 타입. ImageIO 가 읽을 수 있는 형식으로 제한합니다. */
+    private static final Set<String> SUPPORTED_TYPES = Set.of("image/jpeg", "image/jpg", "image/png");
+
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionService exhibitionService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
-     * 장식장에 굿즈를 배치합니다.
+     * 장식장에 굿즈를 배치합니다. 이미지 주소를 이미 알고 있을 때 쓰는 경로입니다.
      *
      * <p>자유 배치라 위치가 겹쳐도 막지 않습니다. 겹쳐 놓는 연출도 사용자의 선택입니다.
      */
@@ -45,6 +54,37 @@ public class ExhibitionItemService {
                 request.itemName(), request.price(), request.comment(), ItemStatus.READY);
 
         return ExhibitionItemResponse.from(exhibitionItemRepository.save(item));
+    }
+
+    /**
+     * 사진을 올려 배치합니다. <b>접수만 하고 즉시 응답합니다.</b>
+     *
+     * <p>배경 제거와 후처리는 뒤에서 돌아가므로 응답 시점의 상태는 {@link ItemStatus#PENDING} 입니다.
+     * 프론트는 응답의 {@code itemId} 로 상태를 폴링해 {@code READY} 가 되면 화면에 반영하세요.
+     */
+    @Transactional
+    public ExhibitionItemResponse upload(Long exhibitionId, Long userId,
+                                          MultipartFile image, UploadItemRequest request) {
+        Exhibition exhibition = exhibitionService.getOwnedExhibition(exhibitionId, userId);
+        validateImage(image);
+
+        ExhibitionItem item = new ExhibitionItem(
+                exhibition, request.placement().toPlacement(), null,
+                request.itemName(), request.price(), request.comment(), ItemStatus.PENDING);
+
+        ExhibitionItem saved = exhibitionItemRepository.save(item);
+
+        byte[] data = readBytes(image);
+        String fileName = image.getOriginalFilename() == null ? "upload.png" : image.getOriginalFilename();
+        eventPublisher.publishEvent(new ItemImageUploadedEvent(saved.getId(), data, fileName));
+
+        return ExhibitionItemResponse.from(saved);
+    }
+
+    /** 폴링용 단건 조회. 그리드 전체를 다시 받지 않고 상태만 확인할 때 씁니다. */
+    public ExhibitionItemResponse get(Long exhibitionId, Long itemId) {
+        exhibitionService.getExhibition(exhibitionId);
+        return ExhibitionItemResponse.from(getItemOf(exhibitionId, itemId));
     }
 
     /** 드래그 이동·크기 조절 결과를 저장합니다. */
@@ -95,5 +135,23 @@ public class ExhibitionItemService {
             throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND);
         }
         return item;
+    }
+
+    private void validateImage(MultipartFile image) {
+        if (image == null || image.isEmpty()) {
+            throw new BusinessException(ExhibitionErrorCode.EMPTY_IMAGE);
+        }
+        String contentType = image.getContentType();
+        if (contentType == null || !SUPPORTED_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
+            throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
+        }
+    }
+
+    private byte[] readBytes(MultipartFile image) {
+        try {
+            return image.getBytes();
+        } catch (IOException e) {
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
+        }
     }
 }

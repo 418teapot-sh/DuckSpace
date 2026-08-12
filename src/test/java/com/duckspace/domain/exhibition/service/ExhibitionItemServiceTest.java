@@ -51,6 +51,9 @@ class ExhibitionItemServiceTest {
     @Mock
     private ExhibitionService exhibitionService;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private ExhibitionItemService exhibitionItemService;
 
@@ -174,6 +177,83 @@ class ExhibitionItemServiceTest {
 
             verify(exhibitionItemRepository, never()).findById(anyLong());
         }
+    }
+
+    @Nested
+    @DisplayName("upload 메서드는")
+    class Upload {
+
+        private org.springframework.mock.web.MockMultipartFile png(byte[] bytes) {
+            return new org.springframework.mock.web.MockMultipartFile(
+                    "image", "goods.png", "image/png", bytes);
+        }
+
+        private com.duckspace.domain.exhibition.dto.request.UploadItemRequest uploadRequest() {
+            return new com.duckspace.domain.exhibition.dto.request.UploadItemRequest(
+                    new PlacementRequest(0.3, 0.4, 0.2, 0.2), "치이카와 인형", 15000, "귀여움");
+        }
+
+        @Test
+        void 접수만_하고_PENDING_으로_응답한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
+                    .willAnswer(inv -> {
+                        ExhibitionItem saved = inv.getArgument(0);
+                        ReflectionTestUtils.setField(saved, "id", 7L);
+                        return saved;
+                    });
+
+            ExhibitionItemResponse response =
+                    exhibitionItemService.upload(EXHIBITION_ID, OWNER, png(new byte[]{1, 2, 3}), uploadRequest());
+
+            assertThat(response.itemId()).isEqualTo(7L);
+            assertThat(response.status()).isEqualTo(ItemStatus.PENDING);
+            assertThat(response.imageUrl()).isNull();
+            assertThat(response.posX()).isEqualTo(0.3);
+        }
+
+        @Test
+        void 커밋_이후_처리되도록_이벤트를_발행한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
+                    .willAnswer(inv -> {
+                        ExhibitionItem saved = inv.getArgument(0);
+                        ReflectionTestUtils.setField(saved, "id", 7L);
+                        return saved;
+                    });
+
+            exhibitionItemService.upload(EXHIBITION_ID, OWNER, png(new byte[]{1, 2, 3}), uploadRequest());
+
+            org.mockito.ArgumentCaptor<ItemImageUploadedEvent> captor =
+                    org.mockito.ArgumentCaptor.forClass(ItemImageUploadedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().itemId()).isEqualTo(7L);
+            assertThat(captor.getValue().fileName()).isEqualTo("goods.png");
+        }
+
+        @Test
+        void 빈_파일이면_거부한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.upload(EXHIBITION_ID, OWNER, png(new byte[0]), uploadRequest()));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.EMPTY_IMAGE);
+            verify(eventPublisher, never()).publishEvent(any(ItemImageUploadedEvent.class));
+        }
+
+        @Test
+        void 지원하지_않는_형식이면_거부한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            var pdf = new org.springframework.mock.web.MockMultipartFile(
+                    "image", "doc.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.upload(EXHIBITION_ID, OWNER, pdf, uploadRequest()));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
+        }
+
     }
 
     @Nested

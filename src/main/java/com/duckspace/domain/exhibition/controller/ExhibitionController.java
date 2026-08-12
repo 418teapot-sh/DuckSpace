@@ -4,6 +4,7 @@ import com.duckspace.domain.exhibition.dto.request.AddItemRequest;
 import com.duckspace.domain.exhibition.dto.request.CreateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.request.UpdateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.request.UpdatePositionRequest;
+import com.duckspace.domain.exhibition.dto.request.UploadItemRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemResponse;
@@ -17,6 +18,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +28,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -93,6 +97,31 @@ public class ExhibitionController {
                                                         @PathVariable Long exhibitionId,
                                                         @Valid @RequestBody AddItemRequest request) {
         return ApiResponse.success(exhibitionItemService.add(exhibitionId, authUser.getUserId(), request));
+    }
+
+    @Operation(summary = "사진 업로드로 굿즈 배치",
+            description = """
+                    사진을 올려 장식장에 배치합니다. **접수만 하고 즉시 응답합니다.**
+                    배경 제거와 후처리가 뒤에서 돌아가므로 응답의 status 는 PENDING 입니다.
+                    응답의 itemId 로 단건 조회를 폴링해 READY 가 되면 화면에 반영하세요.
+                    placement 의 좌표·크기는 배경 대비 비율(0.0~1.0)입니다.
+                    JPG 또는 PNG, 10MB 이하만 받습니다.
+                    """)
+    @PostMapping(value = "/{exhibitionId}/items/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<ExhibitionItemResponse> uploadItem(@AuthenticationPrincipal AuthUser authUser,
+                                                           @PathVariable Long exhibitionId,
+                                                           @RequestPart("image") MultipartFile image,
+                                                           @Valid @RequestPart("data") UploadItemRequest request) {
+        return ApiResponse.success(
+                exhibitionItemService.upload(exhibitionId, authUser.getUserId(), image, request));
+    }
+
+    @Operation(summary = "굿즈 단건 조회 (폴링용)",
+            description = "업로드 후 status 가 READY 로 바뀔 때까지 이 API 를 폴링하세요.")
+    @GetMapping("/{exhibitionId}/items/{itemId}")
+    public ApiResponse<ExhibitionItemResponse> getItem(@PathVariable Long exhibitionId,
+                                                        @PathVariable Long itemId) {
+        return ApiResponse.success(exhibitionItemService.get(exhibitionId, itemId));
     }
 
     @Operation(summary = "굿즈 위치·크기 저장",

@@ -44,3 +44,17 @@ openai:
   # 요약 호출에 실패하고 null로 폴백합니다(배너 등록 자체는 막지 않음).
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-4o-mini}
+
+# 처리된 이미지 저장 위치.
+# 로컬 PC 에는 EC2 와 달리 IAM 역할이 없어 S3 에 붙을 수 없으므로 기본값은 파일시스템입니다.
+# 배포에서는 STORAGE_TYPE=s3 로 바꿉니다.
+storage:
+  type: ${STORAGE_TYPE:local}
+  local:
+    directory: ./uploads
+    public-base-url: http://localhost:8080/uploads
+  s3:
+    bucket: ${S3_BUCKET:duckspace-images-s3-445529239886-ap-northeast-2-an}
+    region: ${AWS_REGION:ap-northeast-2}
+    # 비우면 https://{bucket}.s3.{region}.amazonaws.com 을 씁니다.
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
