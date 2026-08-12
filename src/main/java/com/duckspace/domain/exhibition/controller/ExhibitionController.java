@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-@Tag(name = "전시", description = "장식장과 슬롯에 배치된 굿즈")
+@Tag(name = "전시", description = "장식장과 자유 배치된 굿즈")
 @RestController
 @RequestMapping("/api/exhibitions")
 @RequiredArgsConstructor
@@ -56,7 +56,11 @@ public class ExhibitionController {
     }
 
     @Operation(summary = "장식장 상세",
-            description = "슬롯에 놓인 굿즈를 전부 돌려줍니다. 프론트는 items 의 slotId 로 배치 위치를 찾습니다.")
+            description = """
+                    배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height 로 그리면 됩니다.
+                    좌표와 크기는 배경 대비 비율(0.0~1.0)입니다.
+                    본인 장식장이면 처리 중(PENDING)·실패(FAILED)한 굿즈도 함께 나옵니다.
+                    """)
     @GetMapping("/{exhibitionId}")
     public ApiResponse<ExhibitionDetailResponse> detail(@AuthenticationPrincipal AuthUser authUser,
                                                          @PathVariable Long exhibitionId) {
