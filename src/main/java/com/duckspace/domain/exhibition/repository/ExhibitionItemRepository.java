@@ -1,0 +1,42 @@
+package com.duckspace.domain.exhibition.repository;
+
+import com.duckspace.domain.exhibition.entity.ExhibitionItem;
+import com.duckspace.domain.exhibition.entity.ItemStatus;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.Collection;
+import java.util.List;
+
+public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, Long> {
+
+    /** 장식장 상세용. 슬롯 수가 고정이라 전체를 가져옵니다. */
+    List<ExhibitionItem> findByExhibitionIdOrderByIdAsc(Long exhibitionId);
+
+    /** 그리드 최초 진입. 최신순. */
+    List<ExhibitionItem> findByExhibitionIdOrderByIdDesc(Long exhibitionId, Pageable pageable);
+
+    /** 그리드 더보기. 커서보다 오래된 것만. */
+    List<ExhibitionItem> findByExhibitionIdAndIdLessThanOrderByIdDesc(Long exhibitionId, Long cursor, Pageable pageable);
+
+    boolean existsByExhibitionIdAndSlotId(Long exhibitionId, String slotId);
+
+    void deleteByExhibitionId(Long exhibitionId);
+
+    /**
+     * 장식장별 대표 이미지. 목록 카드에 쓸 첫 아이템을 방마다 하나씩 한 번에 가져옵니다.
+     * 장식장마다 따로 조회하면 N+1 이 됩니다.
+     */
+    @Query("""
+            select i from ExhibitionItem i
+            where i.id in (
+                select min(i2.id) from ExhibitionItem i2
+                where i2.exhibition.id in :exhibitionIds and i2.status = :status
+                group by i2.exhibition.id
+            )
+            """)
+    List<ExhibitionItem> findFirstItemOfEach(@Param("exhibitionIds") Collection<Long> exhibitionIds,
+                                              @Param("status") ItemStatus status);
+}
