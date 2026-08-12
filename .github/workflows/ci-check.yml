@@ -4,9 +4,34 @@ on:
   pull_request:
     branches: [ "main", "develop" ]
 
+# 같은 PR 에 새 커밋이 오면 이전 실행은 취소합니다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci-check:
     runs-on: ubuntu-24.04
+
+    # 테스트를 운영과 같은 MySQL 로 돌립니다.
+    # H2 는 미묘하게 다르게 동작하는 지점이 있어(예: enum varchar 의 check 제약)
+    # "로컬/CI 에선 됐는데 서버에서 안 되는" 사고를 막기 위해 DB 를 맞춥니다.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: duckspace_test
+          MYSQL_USER: duckspace
+          MYSQL_PASSWORD: duckspace
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -15,12 +40,21 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          # 없으면 실행할 때마다 의존성을 전부 새로 받습니다.
+          cache: 'gradle'
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Run tests
         run: ./gradlew test
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test/
 
       - name: Build
         run: ./gradlew build -x test
