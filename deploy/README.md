@@ -5,20 +5,25 @@
 
 ## 1. systemd 서비스
 
-[`duckspace.service`](./duckspace.service)를 그대로 설치합니다.
+최초 1회만 아래로 설치하면, 그 다음부터는 **매 배포마다 `deploy.yml`이 리포의
+[`duckspace.service`](./duckspace.service) 내용을 그대로 서버에 다시 반영**합니다
+(`sudo cp` + `daemon-reload`). 그래서 이 파일을 고쳐놓고 서버에는 안 퍼진 채로 배포가
+"성공"해버리는 사고(예전에 jar 파일명 바꿨을 때 겪음 — jar는 최신인데 ExecStart 는 옛날
+파일명을 계속 가리켜서 실제로는 옛날 jar 가 재시작되던 문제)가 이제 안 남습니다.
 
 ```bash
 sudo cp deploy/duckspace.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable duckspace
+sudo systemctl enable duckspace   # 이건 배포마다 다시 할 필요 없음 — 재부팅 시 자동 시작 설정
 ```
 
 - jar 경로: `/home/ubuntu/DuckSpace/build/libs/duckspace.jar`
   (파일명이 `build.gradle`의 `bootJar.archiveFileName`으로 고정되어 있어 `version`이 바뀌어도
   안 바뀜 — 배포 스크립트·systemd가 전부 이 경로를 고정값으로 참조하기 때문)
   - deploy.yml이 새 jar를 `build/libs/staging/`에 먼저 올린 뒤 검증·백업까지 마치고 이 경로로
-    원자적으로 교체함(`mv`). 두 디렉터리 모두 미리 만들어져 있어야 함:
-    `mkdir -p /home/ubuntu/DuckSpace/build/libs/staging`
+    원자적으로 교체함(`mv`). `build/libs/staging/`과 `deploy/`(유닛 파일 업로드용) 디렉터리는
+    `deploy.yml`의 "Ensure remote directories exist" 스텝이 매번 `mkdir -p`로 알아서 만드므로
+    수동으로 미리 만들어둘 필요 없음.
   - jar 무결성 검증에 `python3 -m zipfile -t`를 씀. AWS 기본 Ubuntu AMI는 cloud-init 구동에
     python3 이 필요해 기본 포함되어 있음 — 다른 AMI로 바꾸면 이 전제가 깨질 수 있음.
 - `--spring.profiles.active=dev`를 커맨드라인 인자로 명시함. 이게 빠지면 `application.yml`의
