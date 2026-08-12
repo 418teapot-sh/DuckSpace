@@ -13,8 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,7 +62,20 @@ class FollowServiceTest {
 
             followService.follow(1L, 2L);
 
-            verify(followRepository).save(any());
+            verify(followRepository).saveAndFlush(any());
+        }
+
+        @Test
+        void 동시_요청으로_DB_유니크_제약조건이_위반되면_ALREADY_FOLLOWING_예외로_변환한다() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(user(1L)));
+            given(userRepository.findById(2L)).willReturn(Optional.of(user(2L)));
+            given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(false);
+            given(followRepository.saveAndFlush(any())).willThrow(new DataIntegrityViolationException("duplicate"));
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> followService.follow(1L, 2L));
+
+            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.ALREADY_FOLLOWING);
         }
 
         @Test
@@ -118,6 +133,54 @@ class FollowServiceTest {
 
             assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.NOT_FOLLOWING);
             verify(followRepository, never()).deleteByFollowerIdAndFollowingId(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("getFollowers 메서드는")
+    class GetFollowers {
+
+        @Test
+        void 존재하지_않는_유저면_예외() {
+            given(userRepository.existsById(1L)).willReturn(false);
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> followService.getFollowers(1L, null, null));
+
+            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.USER_NOT_FOUND);
+            verify(followRepository, never()).findFollowersByFollowingId(any(), any(), any());
+        }
+
+        @Test
+        void 존재하는_유저면_팔로워_목록을_조회한다() {
+            given(userRepository.existsById(1L)).willReturn(true);
+            given(followRepository.findFollowersByFollowingId(any(), any(), any())).willReturn(List.of());
+
+            assertThat(followService.getFollowers(1L, null, null)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("getFollowing 메서드는")
+    class GetFollowing {
+
+        @Test
+        void 존재하지_않는_유저면_예외() {
+            given(userRepository.existsById(1L)).willReturn(false);
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> followService.getFollowing(1L, null, null));
+
+            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.USER_NOT_FOUND);
+            verify(followRepository, never()).findFollowingByFollowerId(any(), any(), any());
+        }
+
+        @Test
+        void 존재하는_유저면_팔로잉_목록을_조회한다() {
+            given(userRepository.existsById(1L)).willReturn(true);
+            given(followRepository.findFollowingByFollowerId(any(), any(), any())).willReturn(List.of());
+
+            assertThat(followService.getFollowing(1L, null, null)).isEmpty();
         }
     }
 

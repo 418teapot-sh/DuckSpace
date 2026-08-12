@@ -8,6 +8,7 @@ import com.duckspace.domain.user.repository.FollowRepository;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -37,7 +38,11 @@ public class FollowService {
 
         User follower = getUser(followerId);
         User following = getUser(followingId);
-        followRepository.save(Follow.of(follower, following));
+        try {
+            followRepository.saveAndFlush(Follow.of(follower,following));
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(UserErrorCode.ALREADY_FOLLOWING);
+        }
     }
 
     @Transactional
@@ -49,12 +54,18 @@ public class FollowService {
     }
 
     public List<FollowUserResponse> getFollowers(Long userId, Long cursor, Integer size) {
+        if (!userRepository.existsById(userId)) {
+            throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
+        }
         return followRepository.findFollowersByFollowingId(userId, cursor, pageable(size)).stream()
                 .map(follow -> FollowUserResponse.from(follow.getFollower()))
                 .toList();
     }
 
     public List<FollowUserResponse> getFollowing(Long userId, Long cursor, Integer size) {
+        if (!userRepository.existsById(userId)) {
+            throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
+        }
         return followRepository.findFollowingByFollowerId(userId, cursor, pageable(size)).stream()
                 .map(follow -> FollowUserResponse.from(follow.getFollowing()))
                 .toList();
