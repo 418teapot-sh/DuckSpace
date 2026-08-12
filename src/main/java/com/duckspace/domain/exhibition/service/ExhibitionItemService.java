@@ -1,6 +1,7 @@
 package com.duckspace.domain.exhibition.service;
 
 import com.duckspace.domain.exhibition.dto.request.AddItemRequest;
+import com.duckspace.domain.exhibition.dto.request.UpdatePositionRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemResponse;
 import com.duckspace.domain.exhibition.entity.Exhibition;
@@ -9,14 +10,15 @@ import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.global.exception.BusinessException;
+import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -30,42 +32,46 @@ public class ExhibitionItemService {
     private final ExhibitionService exhibitionService;
 
     /**
-     * 슬롯에 굿즈를 배치합니다. 이미 굿즈가 놓인 슬롯이면 거부합니다.
+     * 장식장에 굿즈를 배치합니다.
      *
-     * <p>이미지 파이프라인이 붙기 전이라 상태는 곧바로 {@link ItemStatus#READY} 입니다.
-     * 파일 업로드 경로가 생기면 그쪽은 {@code PENDING} 으로 시작합니다.
+     * <p>자유 배치라 위치가 겹쳐도 막지 않습니다. 겹쳐 놓는 연출도 사용자의 선택입니다.
      */
     @Transactional
     public ExhibitionItemResponse add(Long exhibitionId, Long userId, AddItemRequest request) {
         Exhibition exhibition = exhibitionService.getOwnedExhibition(exhibitionId, userId);
 
-        if (exhibitionItemRepository.existsByExhibitionIdAndSlotId(exhibitionId, request.slotId())) {
-            throw new BusinessException(ExhibitionErrorCode.SLOT_ALREADY_OCCUPIED);
-        }
-
         ExhibitionItem item = new ExhibitionItem(
-                exhibition, request.slotId(), request.imageUrl(),
-                request.itemName(), request.brand(), request.description(), ItemStatus.READY);
+                exhibition, request.placement().toPlacement(), request.imageUrl(),
+                request.itemName(), request.price(), request.comment(), ItemStatus.READY);
 
-        try {
-            return ExhibitionItemResponse.from(exhibitionItemRepository.saveAndFlush(item));
-        } catch (DataIntegrityViolationException e) {
-            // 같은 슬롯에 동시에 배치를 시도한 경우. 사전 확인만으로는 막지 못합니다.
-            throw new BusinessException(ExhibitionErrorCode.SLOT_ALREADY_OCCUPIED);
-        }
+        return ExhibitionItemResponse.from(exhibitionItemRepository.save(item));
+    }
+
+    /** 드래그 이동·크기 조절 결과를 저장합니다. */
+    @Transactional
+    public ExhibitionItemResponse updatePosition(Long exhibitionId, Long itemId, Long userId,
+                                                  UpdatePositionRequest request) {
+        exhibitionService.getOwnedExhibition(exhibitionId, userId);
+        ExhibitionItem item = getItemOf(exhibitionId, itemId);
+
+        item.moveTo(request.placement().toPlacement());
+        return ExhibitionItemResponse.from(item);
     }
 
     /** 전시된 굿즈 그리드. 최신순 커서 페이징입니다. */
-    public ExhibitionItemPageResponse list(Long exhibitionId, Long cursor, Integer size) {
-        exhibitionService.getExhibition(exhibitionId);
+    public ExhibitionItemPageResponse list(Long exhibitionId, Long viewerId, Long cursor, Integer size) {
+        Exhibition exhibition = exhibitionService.getExhibition(exhibitionId);
+        Set<ItemStatus> visible = ItemStatus.visibleTo(exhibition.isOwnedBy(viewerId));
 
-        int pageSize = normalizeSize(size);
+        int pageSize = Paging.normalize(size, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
         // 다음 페이지 존재 여부를 알기 위해 한 개 더 가져옵니다.
         Pageable pageable = PageRequest.of(0, pageSize + 1);
 
         List<ExhibitionItem> found = (cursor == null)
-                ? exhibitionItemRepository.findByExhibitionIdOrderByIdDesc(exhibitionId, pageable)
-                : exhibitionItemRepository.findByExhibitionIdAndIdLessThanOrderByIdDesc(exhibitionId, cursor, pageable);
+                ? exhibitionItemRepository.findByExhibitionIdAndStatusInOrderByIdDesc(
+                        exhibitionId, visible, pageable)
+                : exhibitionItemRepository.findByExhibitionIdAndStatusInAndIdLessThanOrderByIdDesc(
+                        exhibitionId, visible, cursor, pageable);
 
         boolean hasNext = found.size() > pageSize;
         List<ExhibitionItem> page = hasNext ? found.subList(0, pageSize) : found;
@@ -78,22 +84,16 @@ public class ExhibitionItemService {
     @Transactional
     public void delete(Long exhibitionId, Long itemId, Long userId) {
         exhibitionService.getOwnedExhibition(exhibitionId, userId);
+        exhibitionItemRepository.delete(getItemOf(exhibitionId, itemId));
+    }
 
+    /** 다른 장식장의 굿즈 id 를 넣어도 건드려지지 않도록 확인합니다. */
+    private ExhibitionItem getItemOf(Long exhibitionId, Long itemId) {
         ExhibitionItem item = exhibitionItemRepository.findById(itemId)
                 .orElseThrow(() -> new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND));
-
-        // 다른 장식장의 아이템 id 를 넣어도 지워지지 않도록 확인합니다.
         if (!item.belongsTo(exhibitionId)) {
             throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND);
         }
-
-        exhibitionItemRepository.delete(item);
-    }
-
-    private int normalizeSize(Integer size) {
-        if (size == null || size <= 0) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(size, MAX_PAGE_SIZE);
+        return item;
     }
 }

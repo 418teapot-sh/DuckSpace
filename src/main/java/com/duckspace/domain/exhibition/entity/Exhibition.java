@@ -31,6 +31,10 @@ import java.util.Objects;
 public class Exhibition extends BaseTimeEntity {
 
     public static final int NAME_MAX_LENGTH = 30;
+    public static final int THEME_CODE_MAX_LENGTH = 30;
+
+    /** 테마를 고르지 않았을 때 쓰는 기본 배경. */
+    public static final String DEFAULT_THEME_CODE = "BASIC";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -43,9 +47,19 @@ public class Exhibition extends BaseTimeEntity {
     @Column(name = "name", nullable = false, length = NAME_MAX_LENGTH)
     private String name;
 
-    public Exhibition(Long userId, String name) {
+    /**
+     * 배경 테마 식별자. 실제 배경 이미지는 프론트가 코드별로 갖고 있습니다.
+     *
+     * <p>유료 테마 구매·정산은 이번 범위가 아니라 프리셋 코드만 저장합니다.
+     * 나중에 판매를 붙이면 이 값이 구매한 테마를 가리키게 됩니다.
+     */
+    @Column(name = "theme_code", nullable = false, length = THEME_CODE_MAX_LENGTH)
+    private String themeCode;
+
+    public Exhibition(Long userId, String name, String themeCode) {
         this.userId = userId;
         this.name = name;
+        this.themeCode = (themeCode == null || themeCode.isBlank()) ? DEFAULT_THEME_CODE : themeCode;
     }
 
     public boolean isOwnedBy(Long userId) {
@@ -54,5 +68,11 @@ public class Exhibition extends BaseTimeEntity {
 
     public void rename(String name) {
         this.name = name;
+    }
+
+    public void changeTheme(String themeCode) {
+        if (themeCode != null && !themeCode.isBlank()) {
+            this.themeCode = themeCode;
+        }
     }
 }

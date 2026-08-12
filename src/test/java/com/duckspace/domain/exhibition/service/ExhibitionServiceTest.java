@@ -59,18 +59,19 @@ class ExhibitionServiceTest {
 
     @BeforeEach
     void setUp() {
-        exhibition = new Exhibition(OWNER, "장식장1");
+        exhibition = new Exhibition(OWNER, "장식장1", null);
         ReflectionTestUtils.setField(exhibition, "id", EXHIBITION_ID);
     }
 
     private Exhibition exhibitionWithId(Long id, Long userId, String name) {
-        Exhibition e = new Exhibition(userId, name);
+        Exhibition e = new Exhibition(userId, name, null);
         ReflectionTestUtils.setField(e, "id", id);
         return e;
     }
 
-    private ExhibitionItem itemOf(Exhibition e, String slotId, String imageUrl) {
-        return new ExhibitionItem(e, slotId, imageUrl, "굿즈", null, null, ItemStatus.READY);
+    private ExhibitionItem itemOf(Exhibition e, String imageUrl) {
+        return new ExhibitionItem(e, new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3),
+                imageUrl, "굿즈", null, null, ItemStatus.READY);
     }
 
     @Nested
@@ -82,7 +83,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.save(any(Exhibition.class))).willReturn(exhibition);
 
             ExhibitionDetailResponse response =
-                    exhibitionService.create(OWNER, new CreateExhibitionRequest("장식장1"));
+                    exhibitionService.create(OWNER, new CreateExhibitionRequest("장식장1", null));
 
             assertThat(response.exhibitionId()).isEqualTo(EXHIBITION_ID);
             assertThat(response.name()).isEqualTo("장식장1");
@@ -99,23 +100,24 @@ class ExhibitionServiceTest {
         @Test
         void 슬롯에_놓인_굿즈를_모두_돌려준다() {
             given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
-            given(exhibitionItemRepository.findByExhibitionIdOrderByIdAsc(EXHIBITION_ID))
-                    .willReturn(List.of(itemOf(exhibition, "SHELF_1", "a.png"),
-                            itemOf(exhibition, "TABLE_1", "b.png")));
-            given(exhibitionLikeRepository.countByExhibitionIds(List.of(EXHIBITION_ID))).willReturn(List.of());
+            given(exhibitionItemRepository.findByExhibitionIdAndStatusInOrderByIdAsc(eq(EXHIBITION_ID), any()))
+                    .willReturn(List.of(itemOf(exhibition, "a.png"),
+                            itemOf(exhibition, "b.png")));
+            given(exhibitionLikeRepository.countByExhibitionId(EXHIBITION_ID)).willReturn(0L);
             given(exhibitionLikeRepository.existsByExhibitionIdAndUserId(EXHIBITION_ID, OWNER)).willReturn(false);
 
             ExhibitionDetailResponse response = exhibitionService.getDetail(EXHIBITION_ID, OWNER);
 
             assertThat(response.items()).hasSize(2);
-            assertThat(response.items()).extracting("slotId").containsExactly("SHELF_1", "TABLE_1");
+            assertThat(response.items()).extracting(r -> r.imageUrl()).containsExactly("a.png", "b.png");
         }
 
         @Test
         void 남의_장식장이면_mine이_false다() {
             given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
-            given(exhibitionItemRepository.findByExhibitionIdOrderByIdAsc(EXHIBITION_ID)).willReturn(List.of());
-            given(exhibitionLikeRepository.countByExhibitionIds(List.of(EXHIBITION_ID))).willReturn(List.of());
+            given(exhibitionItemRepository.findByExhibitionIdAndStatusInOrderByIdAsc(eq(EXHIBITION_ID), any()))
+                    .willReturn(List.of());
+            given(exhibitionLikeRepository.countByExhibitionId(EXHIBITION_ID)).willReturn(0L);
             given(exhibitionLikeRepository.existsByExhibitionIdAndUserId(EXHIBITION_ID, STRANGER)).willReturn(true);
 
             ExhibitionDetailResponse response = exhibitionService.getDetail(EXHIBITION_ID, STRANGER);
@@ -144,7 +146,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> exhibitionService.rename(EXHIBITION_ID, STRANGER, new UpdateExhibitionRequest("바꾼이름")));
+                    () -> exhibitionService.rename(EXHIBITION_ID, STRANGER, new UpdateExhibitionRequest("바꾼이름", null)));
 
             assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.NOT_EXHIBITION_OWNER);
             assertThat(exhibition.getName()).isEqualTo("장식장1");
@@ -191,7 +193,7 @@ class ExhibitionServiceTest {
             // findAllById 는 순서를 보장하지 않으므로 일부러 뒤집어서 돌려줍니다.
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(second, first));
             given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L, 1L), ItemStatus.READY))
-                    .willReturn(List.of(itemOf(first, "SHELF_1", "thumb.png")));
+                    .willReturn(List.of(itemOf(first, "thumb.png")));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of(3L));
 

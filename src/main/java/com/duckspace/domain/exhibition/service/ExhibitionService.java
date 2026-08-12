@@ -12,12 +12,12 @@ import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.domain.exhibition.repository.ExhibitionLikeRepository;
 import com.duckspace.domain.exhibition.repository.ExhibitionRepository;
 import com.duckspace.global.exception.BusinessException;
+import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,28 +40,23 @@ public class ExhibitionService {
 
     @Transactional
     public ExhibitionDetailResponse create(Long userId, CreateExhibitionRequest request) {
-        Exhibition saved = exhibitionRepository.save(new Exhibition(userId, request.name()));
+        Exhibition saved = exhibitionRepository.save(
+                new Exhibition(userId, request.name(), request.themeCode()));
         return ExhibitionDetailResponse.of(saved, userId, 0, false, List.of());
     }
 
     public ExhibitionDetailResponse getDetail(Long exhibitionId, Long viewerId) {
         Exhibition exhibition = getExhibition(exhibitionId);
-        List<ExhibitionItem> items = exhibitionItemRepository.findByExhibitionIdOrderByIdAsc(exhibitionId);
-
-        long likeCount = exhibitionLikeRepository.countByExhibitionIds(List.of(exhibitionId)).stream()
-                .findFirst()
-                .map(ExhibitionLikeRepository.LikeCount::getLikeCount)
-                .orElse(0L);
-        boolean likedByMe = exhibitionLikeRepository.existsByExhibitionIdAndUserId(exhibitionId, viewerId);
-
-        return ExhibitionDetailResponse.of(exhibition, viewerId, likeCount, likedByMe, items);
+        return toDetail(exhibition, viewerId);
     }
 
     @Transactional
     public ExhibitionDetailResponse rename(Long exhibitionId, Long userId, UpdateExhibitionRequest request) {
         Exhibition exhibition = getOwnedExhibition(exhibitionId, userId);
         exhibition.rename(request.name());
-        return getDetail(exhibitionId, userId);
+        exhibition.changeTheme(request.themeCode());
+        // 이미 들고 있는 엔티티로 응답을 만듭니다. getDetail 을 다시 부르면 findById 부터 반복됩니다.
+        return toDetail(exhibition, userId);
     }
 
     /** 장식장을 지우면 그 안의 굿즈와 좋아요도 함께 사라집니다. */
@@ -76,12 +71,13 @@ public class ExhibitionService {
 
     /** 홈 화면 "인기 전시장". 좋아요가 많은 순입니다. */
     public List<ExhibitionSummaryResponse> getPopular(Integer limit, Long viewerId) {
-        List<Long> ids = exhibitionRepository.findPopularIds(PageRequest.of(0, normalizeLimit(limit)));
+        List<Long> ids = exhibitionRepository.findPopularIds(
+                PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
         return toSummaries(ids, viewerId);
     }
 
     /**
-     * 전시 검색. 굿즈 이름·브랜드가 걸리면 그 굿즈가 놓인 장식장을 결과로 돌려줍니다.
+     * 전시 검색. 굿즈 이름이 걸리면 그 굿즈가 놓인 장식장을 결과로 돌려줍니다.
      *
      * <p>키워드의 {@code %} · {@code _} 는 와일드카드로 동작하지 않도록 이스케이프합니다.
      * 이걸 빼면 {@code %} 한 글자로 전체 검색이 됩니다.
@@ -91,7 +87,8 @@ public class ExhibitionService {
             return List.of();
         }
         List<Long> ids = exhibitionRepository.searchExhibitionIdsByItem(
-                escapeLike(keyword.trim()), ItemStatus.READY, PageRequest.of(0, normalizeLimit(limit)));
+                escapeLike(keyword.trim()), ItemStatus.READY,
+                PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
         return toSummaries(ids, viewerId);
     }
 
@@ -108,6 +105,17 @@ public class ExhibitionService {
         return exhibition;
     }
 
+    private ExhibitionDetailResponse toDetail(Exhibition exhibition, Long viewerId) {
+        boolean owner = exhibition.isOwnedBy(viewerId);
+        List<ExhibitionItem> items = exhibitionItemRepository
+                .findByExhibitionIdAndStatusInOrderByIdAsc(exhibition.getId(), ItemStatus.visibleTo(owner));
+
+        long likeCount = exhibitionLikeRepository.countByExhibitionId(exhibition.getId());
+        boolean likedByMe = exhibitionLikeRepository.existsByExhibitionIdAndUserId(exhibition.getId(), viewerId);
+
+        return ExhibitionDetailResponse.of(exhibition, viewerId, likeCount, likedByMe, items);
+    }
+
     /**
      * id 목록을 카드 응답으로 채웁니다.
      *
@@ -122,14 +130,17 @@ public class ExhibitionService {
         Map<Long, Exhibition> exhibitions = exhibitionRepository.findAllById(orderedIds).stream()
                 .collect(Collectors.toMap(Exhibition::getId, Function.identity()));
 
+        // imageUrl 이 null 인 굿즈가 섞이면 Collectors.toMap 이 NPE 를 냅니다.
+        // 지금은 READY 만 조회해 항상 채워져 있지만, 조건이 바뀌면 조용히 터지는 자리라 걸러둡니다.
         Map<Long, String> thumbnails = exhibitionItemRepository
                 .findFirstItemOfEach(orderedIds, ItemStatus.READY).stream()
+                .filter(item -> item.getImageUrl() != null)
                 .collect(Collectors.toMap(item -> item.getExhibition().getId(), ExhibitionItem::getImageUrl));
 
-        Map<Long, Long> likeCounts = new HashMap<>();
-        for (ExhibitionLikeRepository.LikeCount row : exhibitionLikeRepository.countByExhibitionIds(orderedIds)) {
-            likeCounts.put(row.getExhibitionId(), row.getLikeCount());
-        }
+        Map<Long, Long> likeCounts = exhibitionLikeRepository.countByExhibitionIds(orderedIds).stream()
+                .collect(Collectors.toMap(
+                        ExhibitionLikeRepository.LikeCount::getExhibitionId,
+                        ExhibitionLikeRepository.LikeCount::getLikeCount));
 
         Set<Long> likedByMe = new HashSet<>(
                 exhibitionLikeRepository.findLikedExhibitionIds(viewerId, orderedIds));
@@ -151,12 +162,5 @@ public class ExhibitionService {
                 .replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_");
-    }
-
-    private static int normalizeLimit(Integer limit) {
-        if (limit == null || limit <= 0) {
-            return DEFAULT_LIMIT;
-        }
-        return Math.min(limit, MAX_LIMIT);
     }
 }

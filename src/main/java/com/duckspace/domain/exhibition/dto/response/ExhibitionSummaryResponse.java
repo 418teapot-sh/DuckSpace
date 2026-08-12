@@ -10,6 +10,7 @@ import com.duckspace.domain.exhibition.entity.Exhibition;
 public record ExhibitionSummaryResponse(
         Long exhibitionId,
         String name,
+        String themeCode,
         Long ownerId,
         String thumbnailUrl,
         long likeCount,
@@ -21,6 +22,7 @@ public record ExhibitionSummaryResponse(
         return new ExhibitionSummaryResponse(
                 exhibition.getId(),
                 exhibition.getName(),
+                exhibition.getThemeCode(),
                 exhibition.getUserId(),
                 thumbnailUrl,
                 likeCount,

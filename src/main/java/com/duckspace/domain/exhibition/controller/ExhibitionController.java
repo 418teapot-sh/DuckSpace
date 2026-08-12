@@ -3,6 +3,7 @@ package com.duckspace.domain.exhibition.controller;
 import com.duckspace.domain.exhibition.dto.request.AddItemRequest;
 import com.duckspace.domain.exhibition.dto.request.CreateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.request.UpdateExhibitionRequest;
+import com.duckspace.domain.exhibition.dto.request.UpdatePositionRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemResponse;
@@ -78,8 +79,11 @@ public class ExhibitionController {
         return ApiResponse.noContent();
     }
 
-    @Operation(summary = "슬롯에 굿즈 배치",
-            description = "이미 굿즈가 놓인 슬롯이면 409 입니다. 현재는 imageUrl 을 직접 받습니다.")
+    @Operation(summary = "굿즈 배치",
+            description = """
+                    자유 배치입니다. placement 의 좌표·크기는 배경 대비 비율(0.0~1.0)입니다.
+                    위치가 겹쳐도 막지 않습니다. 현재는 imageUrl 을 직접 받습니다.
+                    """)
     @PostMapping("/{exhibitionId}/items")
     public ApiResponse<ExhibitionItemResponse> addItem(@AuthenticationPrincipal AuthUser authUser,
                                                         @PathVariable Long exhibitionId,
@@ -87,13 +91,30 @@ public class ExhibitionController {
         return ApiResponse.success(exhibitionItemService.add(exhibitionId, authUser.getUserId(), request));
     }
 
+    @Operation(summary = "굿즈 위치·크기 저장",
+            description = "드래그로 옮기거나 크기를 조절한 결과를 저장합니다. 본인 장식장만 가능합니다.")
+    @PatchMapping("/{exhibitionId}/items/{itemId}/position")
+    public ApiResponse<ExhibitionItemResponse> updateItemPosition(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable Long exhibitionId,
+            @PathVariable Long itemId,
+            @Valid @RequestBody UpdatePositionRequest request) {
+        return ApiResponse.success(
+                exhibitionItemService.updatePosition(exhibitionId, itemId, authUser.getUserId(), request));
+    }
+
     @Operation(summary = "전시된 굿즈 그리드",
-            description = "최신순 더보기 페이징입니다. 응답의 nextCursor 를 다음 요청의 cursor 로 넣으세요.")
+            description = """
+                    최신순 더보기 페이징입니다. 응답의 nextCursor 를 다음 요청의 cursor 로 넣으세요.
+                    본인 장식장이면 처리 중(PENDING)·실패(FAILED)한 굿즈도 함께 나옵니다.
+                    """)
     @GetMapping("/{exhibitionId}/items")
-    public ApiResponse<ExhibitionItemPageResponse> listItems(@PathVariable Long exhibitionId,
+    public ApiResponse<ExhibitionItemPageResponse> listItems(@AuthenticationPrincipal AuthUser authUser,
+                                                              @PathVariable Long exhibitionId,
                                                               @RequestParam(required = false) Long cursor,
                                                               @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(exhibitionItemService.list(exhibitionId, cursor, size));
+        return ApiResponse.success(
+                exhibitionItemService.list(exhibitionId, authUser.getUserId(), cursor, size));
     }
 
     @Operation(summary = "전시된 굿즈 삭제")

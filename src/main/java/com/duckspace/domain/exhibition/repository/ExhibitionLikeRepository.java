@@ -12,6 +12,9 @@ public interface ExhibitionLikeRepository extends JpaRepository<ExhibitionLike, 
 
     boolean existsByExhibitionIdAndUserId(Long exhibitionId, Long userId);
 
+    /** 장식장 하나의 좋아요 수. 목록용 배치 쿼리를 한 건에 쓰지 않도록 별도로 둡니다. */
+    long countByExhibitionId(Long exhibitionId);
+
     long deleteByExhibitionIdAndUserId(Long exhibitionId, Long userId);
 
     void deleteByExhibitionId(Long exhibitionId);

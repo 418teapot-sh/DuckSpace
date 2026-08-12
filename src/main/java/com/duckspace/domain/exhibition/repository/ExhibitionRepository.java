@@ -29,7 +29,7 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     List<Long> findPopularIds(Pageable pageable);
 
     /**
-     * 아이템 이름·브랜드로 장식장을 찾습니다. 매칭된 아이템이 속한 장식장을 결과로 돌려줍니다.
+     * 굿즈 이름으로 장식장을 찾습니다. 매칭된 굿즈가 놓인 장식장을 결과로 돌려줍니다.
      *
      * <p>{@code escape '\\'} 는 사용자가 입력한 {@code %} · {@code _} 가 와일드카드로 동작하지
      * 않도록 하기 위한 것입니다. 키워드는 서비스에서 이스케이프해서 넘깁니다.
@@ -37,8 +37,7 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     @Query("""
             select distinct i.exhibition.id from ExhibitionItem i
             where i.status = :status
-              and (lower(i.itemName) like lower(concat('%', :keyword, '%')) escape '\\'
-                or lower(i.brand) like lower(concat('%', :keyword, '%')) escape '\\')
+              and lower(i.itemName) like lower(concat('%', :keyword, '%')) escape '\\'
             order by i.exhibition.id desc
             """)
     List<Long> searchExhibitionIdsByItem(@Param("keyword") String keyword,

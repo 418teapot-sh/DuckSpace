@@ -7,13 +7,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 장식장 상세. 슬롯에 놓인 굿즈를 전부 담습니다.
+ * 장식장 상세. 배치된 굿즈를 전부 담습니다.
  *
- * <p>슬롯 좌표는 프론트가 갖고 있으므로, 프론트는 {@code items} 의 {@code slotId} 로 위치를 찾습니다.
+ * <p>배경 이미지는 프론트가 {@code themeCode} 로 찾고, 굿즈는 각자의 좌표·크기로 그립니다.
  */
 public record ExhibitionDetailResponse(
         Long exhibitionId,
         String name,
+        String themeCode,
         Long ownerId,
         boolean mine,
         long likeCount,
@@ -28,6 +29,7 @@ public record ExhibitionDetailResponse(
         return new ExhibitionDetailResponse(
                 exhibition.getId(),
                 exhibition.getName(),
+                exhibition.getThemeCode(),
                 exhibition.getUserId(),
                 exhibition.isOwnedBy(viewerId),
                 likeCount,
