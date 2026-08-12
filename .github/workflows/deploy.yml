@@ -27,6 +27,15 @@ jobs:
           chmod +x gradlew
           ./gradlew bootJar -x test --no-daemon
 
+      - name: Ensure remote directories exist
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            mkdir -p /home/ubuntu/DuckSpace/build/libs/staging /home/ubuntu/DuckSpace/deploy
+
       - name: Upload new jar to staging
         uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         with:
@@ -37,7 +46,17 @@ jobs:
           target: "/home/ubuntu/DuckSpace/build/libs/staging/"
           strip_components: 2
 
-      - name: Swap in new jar, restart, and health check
+      - name: Upload systemd unit file
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "deploy/duckspace.service"
+          target: "/home/ubuntu/DuckSpace/deploy/"
+          strip_components: 1
+
+      - name: Swap in new jar, install unit file, restart, and health check
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -61,6 +80,12 @@ jobs:
 
             # 같은 파일시스템 내 mv는 원자적이라, 교체 도중 half-written 파일이 노출되지 않습니다.
             mv "$NEW_JAR" "$JAR"
+
+            # 리포의 유닛 파일을 매 배포마다 실제 설치 위치에 반영합니다.
+            # (이걸 안 하면 jar 는 최신인데 ExecStart 경로는 예전 파일명을 계속 가리켜서,
+            #  다음 배포가 조용히 옛날 jar 를 재시작하는 문제가 재발할 수 있습니다.)
+            sudo cp /home/ubuntu/DuckSpace/deploy/duckspace.service /etc/systemd/system/duckspace.service
+            sudo systemctl daemon-reload
 
             sudo systemctl restart duckspace
             for i in $(seq 1 20); do
