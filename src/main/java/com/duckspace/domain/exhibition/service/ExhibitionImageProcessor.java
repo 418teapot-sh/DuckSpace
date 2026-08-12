@@ -35,7 +35,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ExhibitionImageProcessor {
 
-    /** 슬롯 출력 크기. 실제 사진으로 검증한 값입니다. remove.bg 무료 출력(0.25MP)에서 업스케일이 없습니다. */
+    /** 출력 크기. 실제 사진으로 검증한 값입니다. remove.bg 무료 출력(0.25MP)에서 업스케일이 없습니다. */
     private static final int OUTPUT_SIZE = 384;
     private static final String PNG = "png";
     private static final String PNG_CONTENT_TYPE = "image/png";
