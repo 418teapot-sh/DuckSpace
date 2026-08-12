@@ -3,6 +3,11 @@ spring:
     name: duckspace
   profiles:
     default: local
+  config:
+    # 프로젝트 루트의 .env 를 읽습니다. 없으면 그냥 넘어갑니다(optional).
+    # 로컬에서 외부 API 키를 넣을 때 쓰고, .env 는 .gitignore 로 막혀 있습니다.
+    # dev/prod 는 파일 대신 진짜 환경변수(/etc/duckspace/app.env)를 씁니다.
+    import: optional:file:.env[.properties]
   jpa:
     # 트랜잭션 밖(뷰 렌더링 시점)까지 영속성 컨텍스트를 열어두지 않습니다.
     # 켜두면 요청 내내 DB 커넥션을 붙잡고 있어 커넥션 풀이 금방 마릅니다.
@@ -23,6 +28,15 @@ jwt:
 cors:
   # 배포 시 CORS_ALLOWED_ORIGINS로 덮어쓰세요. 와일드카드(*) 사용 가능.
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://*.vercel.app}
+
+# 굿즈 사진 배경 제거. 키가 없으면 배경 제거를 건너뜁니다.
+# JWT_SECRET 과 달리 빈 값이 보안 문제가 되지 않고, 키 없는 팀원도 나머지 기능을
+# 개발할 수 있어야 해서 부팅을 막지 않습니다.
+removebg:
+  api-key: ${REMOVEBG_API_KEY:}
+  # preview(0.25MP)만 무료 호출(월 50회)로 처리됩니다.
+  # auto/full 은 크레딧을 소모하며, 크레딧이 없으면 402로 실패합니다.
+  size: preview
 
 openai:
   # JWT_SECRET과 달리 빈 값이 보안 문제가 되지 않고, 키 없는 팀원도 나머지 기능을
