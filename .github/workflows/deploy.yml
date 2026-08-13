@@ -1,0 +1,104 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Build jar
+        run: |
+          chmod +x gradlew
+          ./gradlew bootJar -x test --no-daemon
+
+      - name: Ensure remote directories exist
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            mkdir -p /home/ubuntu/DuckSpace/build/libs/staging /home/ubuntu/DuckSpace/deploy
+
+      - name: Upload new jar to staging
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "build/libs/*.jar"
+          target: "/home/ubuntu/DuckSpace/build/libs/staging/"
+          strip_components: 2
+
+      - name: Upload systemd unit file
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "deploy/duckspace.service"
+          target: "/home/ubuntu/DuckSpace/deploy/"
+          strip_components: 1
+
+      - name: Swap in new jar, install unit file, restart, and health check
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            JAR=/home/ubuntu/DuckSpace/build/libs/duckspace.jar
+            NEW_JAR=/home/ubuntu/DuckSpace/build/libs/staging/duckspace.jar
+
+            # 전송이 중간에 끊기면 손상된 jar가 남을 수 있으므로, 백업·교체 전에 먼저 검증합니다.
+            # 여기서 걸러야 손상된 파일이 롤백 대상(.bak)이나 실행 대상으로 넘어가지 않습니다.
+            python3 -m zipfile -t "$NEW_JAR"
+
+            # 지금 떠 있는 jar만 백업합니다(이미 서비스 중이므로 정상이라고 볼 수 있음).
+            # set -e 라서 cp 가 진짜로 실패하면(디스크 풀 등) 여기서 스크립트가 멈추고
+            # 스텝이 실패로 표시됩니다 — 예전처럼 "|| true"로 삼키지 않습니다.
+            if [ -f "$JAR" ]; then
+              cp "$JAR" "$JAR.bak"
+            fi
+
+            # 같은 파일시스템 내 mv는 원자적이라, 교체 도중 half-written 파일이 노출되지 않습니다.
+            mv "$NEW_JAR" "$JAR"
+
+            # 리포의 유닛 파일을 매 배포마다 실제 설치 위치에 반영합니다.
+            # (이걸 안 하면 jar 는 최신인데 ExecStart 경로는 예전 파일명을 계속 가리켜서,
+            #  다음 배포가 조용히 옛날 jar 를 재시작하는 문제가 재발할 수 있습니다.)
+            sudo cp /home/ubuntu/DuckSpace/deploy/duckspace.service /etc/systemd/system/duckspace.service
+            sudo systemctl daemon-reload
+
+            sudo systemctl restart duckspace
+            for i in $(seq 1 20); do
+              if curl -sf http://localhost:8080/actuator/health > /dev/null; then
+                echo "${{ github.sha }}" > /home/ubuntu/DuckSpace/CURRENT_SHA
+                echo "healthy"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "헬스체크 실패 — 이전 버전으로 롤백합니다"
+            if [ -f "$JAR.bak" ]; then
+              cp "$JAR.bak" "$JAR"
+              sudo systemctl restart duckspace
+            fi
+            exit 1

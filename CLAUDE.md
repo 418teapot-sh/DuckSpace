@@ -37,7 +37,10 @@ docker compose up -d     # MySQL 8 (localhost:3306, DB/계정/비번 모두 duck
 ```
 
 - 스키마가 꼬였을 때: `docker compose down -v && docker compose up -d` (**데이터 전부 삭제**됩니다)
-- 테스트는 H2 인메모리(`test` 프로필)로 돌아서 **Docker 없이도** `./gradlew test`가 됩니다
+- **테스트도 MySQL로 돕니다.** `docker compose up -d`를 먼저 하지 않으면 `./gradlew test`가 실패합니다.
+  `docker-compose.yml`이 개발용 `duckspace`와 테스트용 `duckspace_test` DB를 함께 만듭니다.
+  H2를 쓰지 않는 이유는 **운영(MySQL)과 미묘하게 다르게 동작하는 지점** 때문입니다 —
+  실제로 enum을 varchar로 매핑할 때 H2가 잘못된 check 제약을 만들어 INSERT가 전부 실패한 적이 있습니다.
 - Swagger: http://localhost:8080/swagger-ui.html (우측 상단 Authorize에 액세스 토큰만 붙여넣기)
 
 ---
