@@ -118,11 +118,29 @@ class PostServiceTest {
 
         @Test
         void 키워드의_LIKE_와일드카드를_이스케이프해서_넘긴다() {
-            given(postRepository.search(any(), any(), any(), any())).willReturn(List.of());
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
 
-            postService.listCasual("50%_off", null, null);
+            postService.listCasual("50%_off", null, null, null);
 
-            verify(postRepository).search(any(), eq("50\\%\\_off"), any(), any());
+            verify(postRepository).search(any(), any(), eq("50\\%\\_off"), any(), any());
+        }
+
+        @Test
+        void authorId를_그대로_리포지토리에_넘긴다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listCasual(null, null, null, 42L);
+
+            verify(postRepository).search(any(), any(), any(), eq(42L), any());
+        }
+
+        @Test
+        void keyword와_authorId를_동시에_넘기면_둘_다_그대로_전달된다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listCasual("치이카와", null, null, 42L);
+
+            verify(postRepository).search(any(), any(), eq("치이카와"), eq(42L), any());
         }
     }
 
@@ -159,13 +177,31 @@ class PostServiceTest {
         @Test
         void ExchangeDetail이_없는_글은_목록에서_건너뛴다() {
             Post postWithoutDetail = exchangePost(1L, 10L);
-            given(postRepository.search(any(), any(), any(), any())).willReturn(List.of(postWithoutDetail));
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of(postWithoutDetail));
             given(exchangeDetailRepository.findAllById(any())).willReturn(List.of());
             given(tradeItemRepository.findByExchangeDetail_PostIdIn(any())).willReturn(List.of());
 
-            List<ExchangePostSummaryResponse> responses = postService.listExchange(null, null, null);
+            List<ExchangePostSummaryResponse> responses = postService.listExchange(null, null, null, null);
 
             assertThat(responses).isEmpty();
+        }
+
+        @Test
+        void authorId를_그대로_리포지토리에_넘긴다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listExchange(null, null, null, 42L);
+
+            verify(postRepository).search(any(), any(), any(), eq(42L), any());
+        }
+
+        @Test
+        void keyword와_authorId를_동시에_넘기면_둘_다_그대로_전달된다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listExchange("치이카와", null, null, 42L);
+
+            verify(postRepository).search(any(), any(), eq("치이카와"), eq(42L), any());
         }
     }
 
