@@ -42,6 +42,9 @@ public class User extends BaseTimeEntity {
     @Column(name = "auth_provider", nullable = false)
     private AuthProvider authProvider;
 
+    @Column(name = "profile_image_url")
+    private String profileImageUrl;
+
     @Builder
     private User(String email, String nickname, String password, AuthProvider authProvider) {
         this.email = email;
@@ -50,8 +53,9 @@ public class User extends BaseTimeEntity {
         this.authProvider = authProvider;
     }
 
-    public User updateNickname(String nickname) {
+    public User updateProfile(String nickname, String profileImageUrl) {
         this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
         return this;
     }
 
