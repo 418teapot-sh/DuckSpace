@@ -25,19 +25,18 @@ class HomeApiSmokeTest {
     private MockMvc mockMvc;
 
     @Test
-    void 데이터가_없어도_홈_응답은_세_섹션_구조를_유지한다() throws Exception {
+    void 데이터가_없어도_홈_응답은_섹션_구조를_유지한다() throws Exception {
         mockMvc.perform(get("/api/home"))
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.banners").isArray())
-                .andExpect(jsonPath("$.data.upcomingPopups").isArray())
-                .andExpect(jsonPath("$.data.popularExhibitions").isArray());
+                .andExpect(jsonPath("$.data.upcomingPopups").isArray());
     }
 
     @Test
     @WithMockUser
-    void 배너_팝업_전시장을_등록하면_홈_응답에_그대로_모여서_내려온다() throws Exception {
+    void 배너_팝업을_등록하면_홈_응답에_그대로_모여서_내려온다() throws Exception {
         String popupCreateBody = """
                 {
                   "title": "홈테스트 팝업",
@@ -73,36 +72,17 @@ class HomeApiSmokeTest {
                 .andReturn().getResponse().getContentAsString();
         long bannerId = com.jayway.jsonpath.JsonPath.<Number>read(bannerResponse, "$.data.id").longValue();
 
-        String exhibitionCreateBody = """
-                {
-                  "title": "홈테스트 전시장",
-                  "description": "홈 aggregation 테스트용 전시장",
-                  "thumbnailUrl": "https://example.com/exhibition.png",
-                  "items": [
-                    { "name": "아이템1", "imageUrl": "https://example.com/item1.png", "description": "설명" }
-                  ]
-                }
-                """;
-        String exhibitionResponse = mockMvc.perform(post("/api/admin/exhibitions")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(exhibitionCreateBody))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        long exhibitionId = com.jayway.jsonpath.JsonPath.<Number>read(exhibitionResponse, "$.data.id").longValue();
-
         try {
             mockMvc.perform(get("/api/home"))
                     .andDo(print())
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.banners[?(@.title == '홈테스트 배너')]").exists())
                     .andExpect(jsonPath("$.data.banners[?(@.popupId == %d)]".formatted(popupId)).exists())
-                    .andExpect(jsonPath("$.data.upcomingPopups[?(@.title == '홈테스트 팝업')]").exists())
-                    .andExpect(jsonPath("$.data.popularExhibitions[?(@.title == '홈테스트 전시장')]").exists());
+                    .andExpect(jsonPath("$.data.upcomingPopups[?(@.title == '홈테스트 팝업')]").exists());
         } finally {
             // 다른 도메인의 테스트가 같은 인메모리 DB를 공유하므로, 만든 데이터는 반드시 정리한다.
             mockMvc.perform(delete("/api/admin/banners/" + bannerId));
             mockMvc.perform(delete("/api/admin/popups/" + popupId));
-            mockMvc.perform(delete("/api/admin/exhibitions/" + exhibitionId));
         }
     }
 }
