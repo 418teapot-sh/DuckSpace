@@ -15,6 +15,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * remove.bg 배경 제거 클라이언트.
@@ -31,7 +33,11 @@ import java.time.Duration;
 public class RemoveBgClient {
 
     private static final String ENDPOINT = "https://api.remove.bg/v1.0/removebg";
-    private static final String BOUNDARY = "----DuckSpaceBoundary";
+
+    /** 파일명에 허용할 문자. 나머지는 전부 {@code _} 로 바꿉니다. */
+    private static final Pattern UNSAFE_FILENAME_CHARS = Pattern.compile("[^A-Za-z0-9._-]");
+    private static final int MAX_FILENAME_LENGTH = 100;
+    private static final String FALLBACK_FILENAME = "upload.png";
 
     private final String apiKey;
     private final String size;
@@ -62,12 +68,16 @@ public class RemoveBgClient {
     public BufferedImage removeBackground(byte[] imageBytes, String fileName)
             throws IOException, InterruptedException {
 
+        // boundary 를 요청마다 새로 뽑습니다. 고정값이면 업로드된 바이트 안에 같은 문자열을
+        // 심어 파트 경계를 위조할 수 있습니다.
+        String boundary = "----DuckSpace" + UUID.randomUUID().toString().replace("-", "");
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(ENDPOINT))
                 .header("X-Api-Key", apiKey)
-                .header("Content-Type", "multipart/form-data; boundary=" + BOUNDARY)
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .timeout(Duration.ofSeconds(60))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(buildBody(imageBytes, fileName)))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(buildBody(boundary, imageBytes, fileName)))
                 .build();
 
         HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
@@ -88,24 +98,45 @@ public class RemoveBgClient {
         return result;
     }
 
-    private byte[] buildBody(byte[] imageBytes, String fileName) throws IOException {
+    private byte[] buildBody(String boundary, byte[] imageBytes, String fileName) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-        writeTextPart(out, "size", size);
+        writeTextPart(out, boundary, "size", size);
 
-        out.write(("--" + BOUNDARY + "\r\n").getBytes(StandardCharsets.UTF_8));
-        out.write(("Content-Disposition: form-data; name=\"image_file\"; filename=\"" + fileName + "\"\r\n")
-                .getBytes(StandardCharsets.UTF_8));
+        out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Disposition: form-data; name=\"image_file\"; filename=\"%s\"\r\n"
+                .formatted(sanitizeFileName(fileName))).getBytes(StandardCharsets.UTF_8));
         out.write("Content-Type: application/octet-stream\r\n\r\n".getBytes(StandardCharsets.UTF_8));
         out.write(imageBytes);
         out.write("\r\n".getBytes(StandardCharsets.UTF_8));
 
-        out.write(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
         return out.toByteArray();
     }
 
-    private static void writeTextPart(ByteArrayOutputStream out, String name, String value) throws IOException {
-        out.write(("--" + BOUNDARY + "\r\n").getBytes(StandardCharsets.UTF_8));
+    /**
+     * 파일명을 헤더에 넣어도 안전한 형태로 깎습니다.
+     *
+     * <p><b>사용자가 올린 파일명이 그대로 헤더에 들어가던 자리입니다.</b> CRLF 뿐 아니라
+     * RFC 2231 인코딩({@code filename*=UTF-8''%0d%0a...})으로도 파트를 새로 주입할 수 있어서,
+     * 개별 문자를 이스케이프하는 대신 <b>허용 문자만 남기는</b> 방식으로 막습니다.
+     * 파일명은 remove.bg 가 로그에나 쓰는 값이라 깎여도 잃는 것이 없습니다.
+     */
+    private static String sanitizeFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return FALLBACK_FILENAME;
+        }
+        String safe = UNSAFE_FILENAME_CHARS.matcher(fileName).replaceAll("_");
+        if (safe.length() > MAX_FILENAME_LENGTH) {
+            safe = safe.substring(0, MAX_FILENAME_LENGTH);
+        }
+        // "..", "." 처럼 남은 것이 경로 조각뿐이면 쓸 이유가 없습니다.
+        return safe.replace(".", "").isBlank() ? FALLBACK_FILENAME : safe;
+    }
+
+    private static void writeTextPart(ByteArrayOutputStream out, String boundary,
+                                      String name, String value) throws IOException {
+        out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
         out.write(("Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n")
                 .getBytes(StandardCharsets.UTF_8));
         out.write(value.getBytes(StandardCharsets.UTF_8));

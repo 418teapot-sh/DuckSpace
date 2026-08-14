@@ -20,7 +20,7 @@ import java.nio.file.Path;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "storage.type", havingValue = "local", matchIfMissing = true)
+@ConditionalOnProperty(name = "storage.type", havingValue = "local")
 public class LocalImageStorage implements ImageStorage {
 
     private final Path root;
@@ -36,16 +36,43 @@ public class LocalImageStorage implements ImageStorage {
     @Override
     public String upload(String key, byte[] content, String contentType) {
         try {
-            Path target = root.resolve(key).normalize();
-            if (!target.startsWith(root)) {
-                // key 에 ../ 가 섞여 루트 밖으로 나가는 것을 막습니다.
-                throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
-            }
+            Path target = resolve(key);
             Files.createDirectories(target.getParent());
             Files.write(target, content);
             return publicBaseUrl + "/" + key;
         } catch (IOException e) {
             throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
         }
+    }
+
+    @Override
+    public void deleteByUrl(String imageUrl) {
+        String key = keyFrom(imageUrl);
+        if (key == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(resolve(key));
+        } catch (IOException e) {
+            // 파일이 남는 것보다 삭제 요청이 실패하는 쪽이 사용자에게 더 나쁩니다.
+            log.warn("로컬 이미지 삭제 실패: {} ({})", key, e.toString());
+        }
+    }
+
+    /** {@code key} 에 {@code ../} 가 섞여 루트 밖으로 나가는 것을 막습니다. */
+    private Path resolve(String key) {
+        Path target = root.resolve(key).normalize();
+        if (!target.startsWith(root)) {
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
+        }
+        return target;
+    }
+
+    /** 우리가 만든 URL 이 아니면 건드리지 않습니다. */
+    private String keyFrom(String imageUrl) {
+        if (imageUrl == null || !imageUrl.startsWith(publicBaseUrl + "/")) {
+            return null;
+        }
+        return imageUrl.substring(publicBaseUrl.length() + 1);
     }
 }

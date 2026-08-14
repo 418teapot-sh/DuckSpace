@@ -8,6 +8,7 @@ import com.duckspace.domain.exhibition.entity.Exhibition;
 import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
+import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.domain.exhibition.repository.ExhibitionLikeRepository;
 import com.duckspace.domain.exhibition.repository.ExhibitionRepository;
@@ -37,6 +38,7 @@ public class ExhibitionService {
     private final ExhibitionRepository exhibitionRepository;
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionLikeRepository exhibitionLikeRepository;
+    private final ImageCleanup imageCleanup;
 
     @Transactional
     public ExhibitionDetailResponse create(Long userId, CreateExhibitionRequest request) {
@@ -64,9 +66,15 @@ public class ExhibitionService {
     public void delete(Long exhibitionId, Long userId) {
         Exhibition exhibition = getOwnedExhibition(exhibitionId, userId);
 
+        // 행을 지우기 전에 이미지 주소를 챙겨둡니다. 지운 뒤에는 알아낼 방법이 없어서
+        // S3 객체가 영구히 남습니다.
+        List<String> imageUrls = exhibitionItemRepository.findImageUrlsByExhibitionId(exhibitionId);
+
         exhibitionItemRepository.deleteByExhibitionId(exhibitionId);
         exhibitionLikeRepository.deleteByExhibitionId(exhibitionId);
         exhibitionRepository.delete(exhibition);
+
+        imageCleanup.deleteAfterCommit(imageUrls);
     }
 
     /** 홈 화면 "인기 전시장". 좋아요가 많은 순입니다. */

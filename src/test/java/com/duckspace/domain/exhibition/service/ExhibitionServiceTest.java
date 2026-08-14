@@ -52,6 +52,9 @@ class ExhibitionServiceTest {
     @Mock
     private ExhibitionLikeRepository exhibitionLikeRepository;
 
+    @Mock
+    private com.duckspace.domain.exhibition.image.ImageCleanup imageCleanup;
+
     @InjectMocks
     private ExhibitionService exhibitionService;
 
@@ -177,6 +180,19 @@ class ExhibitionServiceTest {
             verify(exhibitionItemRepository).deleteByExhibitionId(EXHIBITION_ID);
             verify(exhibitionLikeRepository).deleteByExhibitionId(EXHIBITION_ID);
             verify(exhibitionRepository).delete(exhibition);
+        }
+
+        @Test
+        void 저장된_이미지도_함께_정리한다() {
+            given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
+            given(exhibitionItemRepository.findImageUrlsByExhibitionId(EXHIBITION_ID))
+                    .willReturn(List.of("https://cdn/a.png", "https://cdn/b.png"));
+
+            exhibitionService.delete(EXHIBITION_ID, OWNER);
+
+            // 행을 지운 뒤에는 이미지 주소를 알아낼 방법이 없어서, 미리 챙겨두지 않으면
+            // S3 객체가 영구히 남습니다.
+            verify(imageCleanup).deleteAfterCommit(List.of("https://cdn/a.png", "https://cdn/b.png"));
         }
     }
 

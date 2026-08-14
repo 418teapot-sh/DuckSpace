@@ -2,6 +2,11 @@ jwt:
   # 로컬 전용 값. dev/prod 는 반드시 환경변수 JWT_SECRET 으로 주입합니다.
   secret: local-dev-temporary-secret-key-change-this-later-123456
 
+# 개발자 PC 에는 EC2 와 달리 IAM 역할이 없어 S3 에 붙을 수 없습니다.
+# 처리된 이미지는 ./uploads 에 쌓이고 /uploads/** 로 서빙됩니다.
+storage:
+  type: local
+
 spring:
   # DB는 docker compose 로 띄웁니다. (프로젝트 루트에서 `docker compose up -d`)
   datasource:

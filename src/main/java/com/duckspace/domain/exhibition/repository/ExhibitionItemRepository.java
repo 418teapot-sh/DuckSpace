@@ -32,6 +32,13 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
     void deleteByExhibitionId(Long exhibitionId);
 
     /**
+     * 장식장을 통째로 지우기 <b>전에</b> 정리할 이미지 주소만 모읍니다.
+     * 엔티티를 다 불러올 필요가 없어서 주소 컬럼만 뽑습니다.
+     */
+    @Query("select i.imageUrl from ExhibitionItem i where i.exhibition.id = :exhibitionId and i.imageUrl is not null")
+    List<String> findImageUrlsByExhibitionId(@Param("exhibitionId") Long exhibitionId);
+
+    /**
      * 장식장별 대표 이미지. 목록 카드에 쓸 첫 굿즈를 장식장마다 하나씩 한 번에 가져옵니다.
      * 장식장마다 따로 조회하면 N+1 이 됩니다.
      */

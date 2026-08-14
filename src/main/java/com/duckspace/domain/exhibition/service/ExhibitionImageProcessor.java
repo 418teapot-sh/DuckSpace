@@ -1,25 +1,26 @@
 package com.duckspace.domain.exhibition.service;
 
-import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.image.GoodsImageProcessor;
 import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.exhibition.image.RemoveBgClient;
-import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
+import java.awt.image.RenderedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.awt.image.RenderedImage;
+import java.util.Iterator;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * 업로드된 사진을 배경 제거 → 후처리 → 저장까지 <b>백그라운드에서</b> 처리합니다.
@@ -27,58 +28,97 @@ import java.util.UUID;
  * <p>remove.bg 왕복만 1~3초, 후처리와 업로드까지 더하면 수 초가 걸립니다. 요청 스레드에서 하면
  * 업로드 버튼을 누른 화면이 그동안 멈춥니다. 그래서 접수만 하고 여기서 이어받습니다.
  *
- * <p><b>{@link ExhibitionItemService} 와 별도 빈인 이유:</b> 같은 빈 안에서 호출하면
- * {@code @Async} 프록시를 타지 않아 그냥 동기 실행됩니다.
+ * <p><b>{@code @Async} 대신 실행기에 직접 넣는 이유:</b> 큐가 가득 차 거절되면
+ * {@code @Async} 는 이벤트 리스너 바깥에서 예외를 던져 우리가 잡을 수 없고, 아이템이
+ * {@code PENDING} 인 채로 영원히 남습니다. 직접 넣으면 거절을 그 자리에서 잡아
+ * {@code FAILED} 로 정리할 수 있습니다.
+ *
+ * <p><b>트랜잭션을 걸지 않는 이유:</b> 외부 API 왕복(최대 60초)을 트랜잭션이 물고 있으면
+ * 그동안 DB 커넥션을 붙잡습니다. 결과를 쓸 때만 {@link ExhibitionItemStatusWriter} 가
+ * 짧은 트랜잭션을 엽니다.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ExhibitionImageProcessor {
 
     /** 출력 크기. 실제 사진으로 검증한 값입니다. remove.bg 무료 출력(0.25MP)에서 업스케일이 없습니다. */
     private static final int OUTPUT_SIZE = 384;
+
+    /**
+     * 디코딩을 허용하는 최대 픽셀 수.
+     *
+     * <p>업로드 용량 제한(10MB)은 <b>디코딩 후 크기를 제한하지 못합니다.</b> 고압축 PNG 는
+     * 몇 MB 로도 1억 픽셀짜리 캔버스가 될 수 있고, ARGB 로 펼치면 픽셀당 4바이트라
+     * 수백 MB 를 잡아먹습니다. 스레드 둘이 동시에 그러면 작은 EC2 는 그대로 죽습니다.
+     * 4000x3000(1200만) 짜리 폰 사진이 넉넉히 들어가는 선으로 잡았습니다.
+     */
+    private static final long MAX_PIXELS = 40_000_000L;
+
     private static final String PNG = "png";
     private static final String PNG_CONTENT_TYPE = "image/png";
 
+    static {
+        // 기본값(true)이면 ImageIO 가 읽고 쓸 때마다 임시파일을 거칩니다.
+        // 이 파이프라인은 1024px 로 줄여 메모리 안에서 끝내도록 만든 것이라 디스크를 탈 이유가 없습니다.
+        ImageIO.setUseCache(false);
+    }
+
     private final RemoveBgClient removeBgClient;
     private final ImageStorage imageStorage;
-    private final ExhibitionItemRepository exhibitionItemRepository;
+    private final ExhibitionItemStatusWriter statusWriter;
+    private final Executor imageExecutor;
+
+    public ExhibitionImageProcessor(RemoveBgClient removeBgClient,
+                                    ImageStorage imageStorage,
+                                    ExhibitionItemStatusWriter statusWriter,
+                                    @Qualifier(ExhibitionAsyncConfig.IMAGE_EXECUTOR) Executor imageExecutor) {
+        this.removeBgClient = removeBgClient;
+        this.imageStorage = imageStorage;
+        this.statusWriter = statusWriter;
+        this.imageExecutor = imageExecutor;
+    }
 
     /**
      * 저장 트랜잭션이 <b>커밋된 뒤에</b> 처리를 시작합니다.
      *
      * <p>커밋 전에 시작하면 백그라운드 스레드가 아직 없는 아이템을 조회하게 됩니다.
-     * 커밋이 끝난 시점이라 새 트랜잭션이 필요합니다({@code REQUIRES_NEW}).
      */
-    @Async(ExhibitionAsyncConfig.IMAGE_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handle(ItemImageUploadedEvent event) {
-        process(event.itemId(), event.imageData(), event.fileName());
+        try {
+            imageExecutor.execute(() -> process(event));
+        } catch (RejectedExecutionException e) {
+            // 큐까지 가득 찼습니다. 요청 스레드에서 대신 처리하면 "즉시 응답" 약속이 깨지므로,
+            // 실패로 정리하고 사용자가 다시 시도하게 합니다.
+            log.error("이미지 처리 큐가 가득 찼습니다. itemId={}", event.itemId(), e);
+            statusWriter.markFailed(event.itemId(), null);
+        }
     }
 
-    private void process(Long itemId, byte[] imageData, String fileName) {
-        ExhibitionItem item = exhibitionItemRepository.findById(itemId).orElse(null);
-        if (item == null) {
-            // 처리 중에 사용자가 삭제했을 수 있습니다. 실패가 아니라 정상 흐름입니다.
-            log.info("처리할 아이템이 이미 없습니다. itemId={}", itemId);
-            return;
-        }
-
+    /** 실제 처리. 테스트에서 실행기를 거치지 않고 바로 부를 수 있도록 열어둡니다. */
+    void process(ItemImageUploadedEvent event) {
+        Long itemId = event.itemId();
         try {
-            BufferedImage source = removeBackgroundOrOriginal(imageData, fileName);
+            BufferedImage source = removeBackgroundOrOriginal(event.imageData(), event.fileName());
             BufferedImage processed = GoodsImageProcessor.process(
                     source, GoodsImageProcessor.Options.forExhibition(OUTPUT_SIZE));
 
             String url = imageStorage.upload(
-                    keyFor(item, PNG), toBytes(processed), PNG_CONTENT_TYPE);
+                    keyFor(event.exhibitionId(), "." + PNG), toBytes(processed), PNG_CONTENT_TYPE);
 
-            item.markReady(url);
+            statusWriter.markReady(itemId, url);
             log.info("이미지 처리 완료. itemId={}", itemId);
+
+        } catch (InterruptedException e) {
+            // 인터럽트는 "실패" 가 아니라 "그만두라는 신호" 입니다. 삼키면 종료가 지연되고,
+            // 상위 코드가 스레드 상태를 보고 판단할 방법이 사라집니다.
+            Thread.currentThread().interrupt();
+            log.warn("이미지 처리가 중단되었습니다. itemId={}", itemId);
+            statusWriter.markFailed(itemId, storeOriginalQuietly(event));
 
         } catch (Exception e) {
             log.warn("이미지 처리 실패. itemId={}, 원인={}", itemId, e.toString());
-            item.markFailed(storeOriginalQuietly(item, imageData));
+            statusWriter.markFailed(itemId, storeOriginalQuietly(event));
         }
     }
 
@@ -87,13 +127,19 @@ public class ExhibitionImageProcessor {
      *
      * <p>배경 제거는 외부 API 라 언제든 실패할 수 있는데, 그것 때문에 업로드 자체가
      * 실패하면 안 됩니다. 배경이 남은 사진이라도 남기는 편이 낫습니다.
+     *
+     * <p>단 {@link InterruptedException} 은 예외입니다. 서버가 내려가는 중이라는 뜻이므로
+     * 원본으로 계속 진행하지 않고 그대로 올려보냅니다.
      */
-    private BufferedImage removeBackgroundOrOriginal(byte[] imageData, String fileName) throws Exception {
+    private BufferedImage removeBackgroundOrOriginal(byte[] imageData, String fileName)
+            throws Exception {
         if (!removeBgClient.isEnabled()) {
             return readImage(imageData);
         }
         try {
             return removeBgClient.removeBackground(imageData, fileName);
+        } catch (InterruptedException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("배경 제거에 실패해 원본으로 진행합니다: {}", e.toString());
             return readImage(imageData);
@@ -101,26 +147,71 @@ public class ExhibitionImageProcessor {
     }
 
     /** 실패했더라도 사용자가 올린 사진은 잃지 않도록 원본이라도 저장해 둡니다. */
-    private String storeOriginalQuietly(ExhibitionItem item, byte[] imageData) {
+    private String storeOriginalQuietly(ItemImageUploadedEvent event) {
         try {
-            return imageStorage.upload(keyFor(item, "origin.png"), imageData, PNG_CONTENT_TYPE);
+            // 원본이 JPEG 인데 .png 로 저장하면 실제 바이트와 확장자·Content-Type 이 어긋나
+            // 브라우저가 그림을 그리지 못합니다. 바이트에서 실제 포맷을 읽어 맞춥니다.
+            String format = detectFormat(event.imageData());
+            return imageStorage.upload(
+                    keyFor(event.exhibitionId(), "-origin." + format),
+                    event.imageData(),
+                    "image/" + format);
         } catch (Exception e) {
-            log.warn("원본 저장도 실패했습니다. itemId={}", item.getId());
+            log.warn("원본 저장도 실패했습니다. itemId={}", event.itemId());
             return null;
         }
     }
 
+    /**
+     * 바이트를 이미지로 읽습니다. <b>디코딩 전에 픽셀 수를 먼저 확인합니다.</b>
+     *
+     * <p>{@code ImageIO.read} 는 크기를 확인할 틈 없이 통째로 펼쳐버리므로, 헤더만 읽는
+     * {@link ImageReader} 로 크기를 먼저 보고 거릅니다.
+     */
     private static BufferedImage readImage(byte[] data) throws Exception {
-        BufferedImage image = ImageIO.read(new ByteArrayInputStream(data));
-        if (image == null) {
-            throw new IllegalArgumentException("이미지로 읽을 수 없는 파일입니다.");
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
+            ImageReader reader = firstReader(input);
+            try {
+                long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
+                if (pixels > MAX_PIXELS) {
+                    throw new IllegalArgumentException(
+                            "이미지가 너무 큽니다: %d 픽셀 (허용 %d)".formatted(pixels, MAX_PIXELS));
+                }
+                return reader.read(0);
+            } finally {
+                reader.dispose();
+            }
         }
-        return image;
     }
 
-    private static String keyFor(ExhibitionItem item, String suffix) {
-        return "exhibitions/%d/%s-%s".formatted(
-                item.getExhibition().getId(), UUID.randomUUID(), suffix);
+    /** 바이트가 어떤 포맷인지 헤더로 판별합니다. 못 읽으면 png 로 둡니다. */
+    private static String detectFormat(byte[] data) {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
+            ImageReader reader = firstReader(input);
+            try {
+                String format = reader.getFormatName().toLowerCase(Locale.ROOT);
+                // ImageIO 는 JPEG 를 "JPEG" 로 돌려주는데 MIME 타입은 image/jpeg 입니다.
+                return format.equals("jpg") ? "jpeg" : format;
+            } finally {
+                reader.dispose();
+            }
+        } catch (Exception e) {
+            return PNG;
+        }
+    }
+
+    private static ImageReader firstReader(ImageInputStream input) {
+        Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+        if (!readers.hasNext()) {
+            throw new IllegalArgumentException("이미지로 읽을 수 없는 파일입니다.");
+        }
+        ImageReader reader = readers.next();
+        reader.setInput(input);
+        return reader;
+    }
+
+    private static String keyFor(Long exhibitionId, String suffix) {
+        return "exhibitions/%d/%s%s".formatted(exhibitionId, UUID.randomUUID(), suffix);
     }
 
     private static byte[] toBytes(RenderedImage image) throws Exception {

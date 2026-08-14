@@ -7,9 +7,13 @@ package com.duckspace.domain.exhibition.service;
  * 스레드가 아이템을 조회하면 아직 없어서 처리에 실패합니다. 커밋 이후에만 처리가 시작되도록
  * {@code AFTER_COMMIT} 으로 받습니다.
  *
- * @param itemId    상태가 PENDING 으로 저장된 아이템
- * @param imageData 원본 바이트
- * @param fileName  원본 파일명
+ * <p>{@code exhibitionId} 까지 담아 보내는 이유는 저장 경로를 만드는 데 필요한 값이
+ * 이것뿐이라, 처리를 시작하기 전에 DB 를 한 번 더 읽지 않아도 되기 때문입니다.
+ *
+ * @param itemId       상태가 PENDING 으로 저장된 아이템
+ * @param exhibitionId 그 아이템이 놓인 장식장
+ * @param imageData    원본 바이트
+ * @param fileName     원본 파일명
  */
-public record ItemImageUploadedEvent(Long itemId, byte[] imageData, String fileName) {
+public record ItemImageUploadedEvent(Long itemId, Long exhibitionId, byte[] imageData, String fileName) {
 }

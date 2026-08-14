@@ -43,6 +43,9 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
+            // 로컬 저장소에 올린 굿즈 이미지. <img src="/uploads/..."> 는 토큰을 붙일 수 없어서
+            // 여기에 없으면 전부 401 이 됩니다. 배포는 S3 라 이 경로 자체가 없습니다.
+            "/uploads/**",
     };
 
     @Bean

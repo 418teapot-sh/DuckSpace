@@ -52,6 +52,9 @@ class ExhibitionItemServiceTest {
     private ExhibitionService exhibitionService;
 
     @Mock
+    private com.duckspace.domain.exhibition.image.ImageCleanup imageCleanup;
+
+    @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
@@ -229,6 +232,9 @@ class ExhibitionItemServiceTest {
             verify(eventPublisher).publishEvent(captor.capture());
             assertThat(captor.getValue().itemId()).isEqualTo(7L);
             assertThat(captor.getValue().fileName()).isEqualTo("goods.png");
+            assertThat(captor.getValue().exhibitionId())
+                    .as("저장 경로를 만들 때 DB를 다시 읽지 않도록 이벤트에 담아 보냅니다")
+                    .isEqualTo(EXHIBITION_ID);
         }
 
         @Test
@@ -320,6 +326,52 @@ class ExhibitionItemServiceTest {
     }
 
     @Nested
+    @DisplayName("get 메서드는")
+    class GetItem {
+
+        private ExhibitionItem pendingItem() {
+            ExhibitionItem i = new ExhibitionItem(
+                    exhibition, new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3),
+                    "https://img/original.png", "굿즈", null, null, ItemStatus.PENDING);
+            ReflectionTestUtils.setField(i, "id", 5L);
+            return i;
+        }
+
+        @Test
+        void 주인은_처리중인_굿즈를_조회할_수_있다() {
+            given(exhibitionService.getExhibition(EXHIBITION_ID)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(pendingItem()));
+
+            ExhibitionItemResponse response = exhibitionItemService.get(EXHIBITION_ID, 5L, OWNER);
+
+            assertThat(response.status()).isEqualTo(ItemStatus.PENDING);
+        }
+
+        @Test
+        void 남에게는_처리중인_굿즈가_보이지_않는다() {
+            // 목록은 상태로 걸러내는데 단건 조회만 열려 있으면,
+            // 남의 장식장에서 배경이 안 지워진 원본 주소를 그대로 볼 수 있습니다.
+            given(exhibitionService.getExhibition(EXHIBITION_ID)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(pendingItem()));
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.get(EXHIBITION_ID, 5L, STRANGER));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.ITEM_NOT_FOUND);
+        }
+
+        @Test
+        void 남도_완료된_굿즈는_볼_수_있다() {
+            given(exhibitionService.getExhibition(EXHIBITION_ID)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(item(5L)));
+
+            ExhibitionItemResponse response = exhibitionItemService.get(EXHIBITION_ID, 5L, STRANGER);
+
+            assertThat(response.status()).isEqualTo(ItemStatus.READY);
+        }
+    }
+
+    @Nested
     @DisplayName("delete 메서드는")
     class DeleteItem {
 
@@ -332,6 +384,18 @@ class ExhibitionItemServiceTest {
             exhibitionItemService.delete(EXHIBITION_ID, 5L, OWNER);
 
             verify(exhibitionItemRepository).delete(target);
+        }
+
+        @Test
+        void 저장된_이미지도_함께_정리한다() {
+            ExhibitionItem target = item(5L);
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+
+            exhibitionItemService.delete(EXHIBITION_ID, 5L, OWNER);
+
+            // 이걸 빼면 DB 행만 사라지고 S3 객체는 영원히 남습니다.
+            verify(imageCleanup).deleteAfterCommit("https://img/a.png");
         }
 
         @Test

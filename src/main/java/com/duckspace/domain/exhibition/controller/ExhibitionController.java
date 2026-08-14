@@ -117,11 +117,17 @@ public class ExhibitionController {
     }
 
     @Operation(summary = "굿즈 단건 조회 (폴링용)",
-            description = "업로드 후 status 가 READY 로 바뀔 때까지 이 API 를 폴링하세요.")
+            description = """
+                    업로드 후 status 가 READY 로 바뀔 때까지 이 API 를 폴링하세요.
+                    처리 중(PENDING)·실패(FAILED)한 굿즈는 본인 장식장에서만 보입니다.
+                    남의 장식장에서 조회하면 404 입니다.
+                    """)
     @GetMapping("/{exhibitionId}/items/{itemId}")
-    public ApiResponse<ExhibitionItemResponse> getItem(@PathVariable Long exhibitionId,
+    public ApiResponse<ExhibitionItemResponse> getItem(@AuthenticationPrincipal AuthUser authUser,
+                                                        @PathVariable Long exhibitionId,
                                                         @PathVariable Long itemId) {
-        return ApiResponse.success(exhibitionItemService.get(exhibitionId, itemId));
+        return ApiResponse.success(
+                exhibitionItemService.get(exhibitionId, itemId, authUser.getUserId()));
     }
 
     @Operation(summary = "굿즈 위치·크기 저장",

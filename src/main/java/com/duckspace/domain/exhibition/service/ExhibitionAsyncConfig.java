@@ -2,7 +2,6 @@ package com.duckspace.domain.exhibition.service;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
@@ -16,7 +15,6 @@ import java.util.concurrent.ThreadPoolExecutor;
  * 메모리가 먼저 터집니다. 큐에 쌓아두고 순서대로 처리하는 편이 안전합니다.
  */
 @Configuration
-@EnableAsync
 public class ExhibitionAsyncConfig {
 
     public static final String IMAGE_EXECUTOR = "exhibitionImageExecutor";
@@ -28,8 +26,17 @@ public class ExhibitionAsyncConfig {
         executor.setMaxPoolSize(2);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("exhibition-image-");
-        // 큐가 가득 차면 요청 스레드에서 처리합니다. 업로드를 거부하는 것보다는 느려지는 편이 낫습니다.
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+
+        // 큐까지 가득 차면 거절합니다. 예전에는 CallerRunsPolicy 로 요청 스레드에 떠넘겼는데,
+        // 그러면 "접수만 하고 즉시 응답한다" 는 설계가 정확히 부하가 몰린 순간에 무너집니다.
+        // 거절은 ExhibitionImageProcessor 가 받아서 해당 아이템을 FAILED 로 정리합니다.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+
+        // 배포마다 systemd 가 프로세스를 재시작합니다. 이 설정이 없으면 종료 시 shutdownNow() 가
+        // remove.bg 호출 중인 스레드를 인터럽트해서, 처리 중이던 사진이 매 배포마다 깨집니다.
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+
         executor.initialize();
         return executor;
     }

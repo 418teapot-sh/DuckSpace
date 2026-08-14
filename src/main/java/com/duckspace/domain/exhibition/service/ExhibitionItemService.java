@@ -9,6 +9,7 @@ import com.duckspace.domain.exhibition.entity.Exhibition;
 import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
+import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
@@ -38,6 +39,7 @@ public class ExhibitionItemService {
 
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionService exhibitionService;
+    private final ImageCleanup imageCleanup;
     private final ApplicationEventPublisher eventPublisher;
 
     /**
@@ -76,15 +78,26 @@ public class ExhibitionItemService {
 
         byte[] data = readBytes(image);
         String fileName = image.getOriginalFilename() == null ? "upload.png" : image.getOriginalFilename();
-        eventPublisher.publishEvent(new ItemImageUploadedEvent(saved.getId(), data, fileName));
+        eventPublisher.publishEvent(
+                new ItemImageUploadedEvent(saved.getId(), exhibition.getId(), data, fileName));
 
         return ExhibitionItemResponse.from(saved);
     }
 
-    /** 폴링용 단건 조회. 그리드 전체를 다시 받지 않고 상태만 확인할 때 씁니다. */
-    public ExhibitionItemResponse get(Long exhibitionId, Long itemId) {
-        exhibitionService.getExhibition(exhibitionId);
-        return ExhibitionItemResponse.from(getItemOf(exhibitionId, itemId));
+    /**
+     * 폴링용 단건 조회. 그리드 전체를 다시 받지 않고 상태만 확인할 때 씁니다.
+     *
+     * <p>목록과 <b>같은 기준으로</b> 가립니다. 여기만 열어두면 남의 장식장에서 처리 중이거나
+     * 실패한 굿즈의 원본 이미지 주소를 그대로 볼 수 있습니다.
+     */
+    public ExhibitionItemResponse get(Long exhibitionId, Long itemId, Long viewerId) {
+        Exhibition exhibition = exhibitionService.getExhibition(exhibitionId);
+        ExhibitionItem item = getItemOf(exhibitionId, itemId);
+
+        if (!ItemStatus.visibleTo(exhibition.isOwnedBy(viewerId)).contains(item.getStatus())) {
+            throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND);
+        }
+        return ExhibitionItemResponse.from(item);
     }
 
     /** 드래그 이동·크기 조절 결과를 저장합니다. */
@@ -124,7 +137,11 @@ public class ExhibitionItemService {
     @Transactional
     public void delete(Long exhibitionId, Long itemId, Long userId) {
         exhibitionService.getOwnedExhibition(exhibitionId, userId);
-        exhibitionItemRepository.delete(getItemOf(exhibitionId, itemId));
+
+        ExhibitionItem item = getItemOf(exhibitionId, itemId);
+        exhibitionItemRepository.delete(item);
+        // DB 행만 지우면 S3 객체가 그대로 남습니다.
+        imageCleanup.deleteAfterCommit(item.getImageUrl());
     }
 
     /** 다른 장식장의 굿즈 id 를 넣어도 건드려지지 않도록 확인합니다. */

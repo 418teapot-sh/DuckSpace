@@ -41,6 +41,12 @@ docker compose up -d     # MySQL 8 (localhost:3306, DB/계정/비번 모두 duck
   `docker-compose.yml`이 개발용 `duckspace`와 테스트용 `duckspace_test` DB를 함께 만듭니다.
   H2를 쓰지 않는 이유는 **운영(MySQL)과 미묘하게 다르게 동작하는 지점** 때문입니다 —
   실제로 enum을 varchar로 매핑할 때 H2가 잘못된 check 제약을 만들어 INSERT가 전부 실패한 적이 있습니다.
+- ⚠️ **`Unknown database 'duckspace_test'` 가 나면** 이 설정이 생기기 전에 이미 `docker compose up -d`를
+  돌린 경우입니다. 초기화 스크립트는 **MySQL 볼륨이 비어 있을 때만** 실행되기 때문입니다.
+  볼륨을 날리지 않고 고치려면:
+  ```bash
+  docker compose exec -T mysql mysql -uroot -pduckspace < docker/mysql-init/README-local-mysql.sql
+  ```
 - Swagger: http://localhost:8080/swagger-ui.html (우측 상단 Authorize에 액세스 토큰만 붙여넣기)
 
 ---

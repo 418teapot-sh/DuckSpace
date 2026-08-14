@@ -43,22 +43,30 @@ class GoodsImageProcessorTest {
     }
 
     @Test
-    @DisplayName("전시 프리셋은 흰 테두리를 넣지 않는다")
-    void 전시_프리셋은_테두리가_없다() {
-        BufferedImage subject = cutout(600, 200, Color.RED);
+    @DisplayName("피사체 둘레에 흰 테두리가 생기지 않는다")
+    void 피사체에_테두리가_붙지_않는다() {
+        // 띠부씰 도감이라면 흰 테두리가 어울리지만, 실제 책장 배경 위에서는
+        // 오려붙인 스티커처럼 보입니다. 굿즈 색 그대로 끝나야 합니다.
+        BufferedImage result = GoodsImageProcessor.process(
+                cutout(600, 200, Color.RED), GoodsImageProcessor.Options.forExhibition(384));
 
-        BufferedImage noOutline = GoodsImageProcessor.process(
-                subject, GoodsImageProcessor.Options.forExhibition(384));
-        BufferedImage withOutline = GoodsImageProcessor.process(
-                subject, GoodsImageProcessor.Options.forExhibition(384).withOutlineWidth(12));
+        int center = 384 / 2;
+        int edge = firstOpaqueFromLeft(result, center);
 
-        // 테두리를 두르면 피사체 주변에 불투명한 흰 픽셀이 생겨 여백이 줄어듭니다.
-        int transparentNoOutline = countTransparent(noOutline);
-        int transparentWithOutline = countTransparent(withOutline);
+        assertThat(edge).as("불투명한 픽셀을 찾지 못했습니다").isGreaterThanOrEqualTo(0);
+        assertThat(new Color(result.getRGB(edge, center)).getBlue())
+                .as("피사체 경계가 흰색이면 테두리가 둘러진 것입니다")
+                .isLessThan(100);
+    }
 
-        assertThat(transparentNoOutline)
-                .as("테두리가 없으면 투명 영역이 더 넓어야 합니다")
-                .isGreaterThan(transparentWithOutline);
+    /** 주어진 행에서 왼쪽부터 훑어 처음 불투명해지는 x 좌표. 없으면 -1. */
+    private int firstOpaqueFromLeft(BufferedImage img, int y) {
+        for (int x = 0; x < img.getWidth(); x++) {
+            if (!isTransparent(img, x, y)) {
+                return x;
+            }
+        }
+        return -1;
     }
 
     @Test
