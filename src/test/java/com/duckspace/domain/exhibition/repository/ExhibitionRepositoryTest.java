@@ -187,6 +187,32 @@ class ExhibitionRepositoryTest {
                 .containsExactly(a.getId());
     }
 
+    /**
+     * 비로그인 사용자를 위한 계약입니다.
+     *
+     * <p>홈 화면({@code /api/home})은 인증 없이 열리므로 {@code viewerId} 가 {@code null} 인 채로
+     * 여기까지 내려옵니다. <b>터지지 않고 "좋아요 안 누름" 으로 취급되어야</b> 합니다.
+     *
+     * <p>두 메서드가 같은 결과를 내지만 <b>이유가 다릅니다.</b> JPQL 은 {@code = null} 이 항상
+     * UNKNOWN 이라 비고, 파생 쿼리는 Spring Data 가 {@code IS NULL} 로 바꿔주는데 user_id 가
+     * NOT NULL 이라 걸리는 행이 없습니다. 어느 쪽도 우연이 아니지만 근거가 달라서 같이 묶어둡니다.
+     */
+    @Test
+    @DisplayName("비로그인(viewerId=null)이어도 좋아요 조회가 터지지 않고 빈 결과가 된다")
+    void 비로그인_좋아요_조회() {
+        Exhibition a = exhibition(1L, "A");
+        like(a, 10L);
+        entityManager.flush();
+
+        assertThat(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(a.getId())))
+                .as("비로그인 사용자에게는 likedByMe 가 전부 false 여야 합니다")
+                .isEmpty();
+
+        assertThat(exhibitionLikeRepository.existsByExhibitionIdAndUserId(a.getId(), null))
+                .as("파생 쿼리도 null 로 터지지 않아야 합니다")
+                .isFalse();
+    }
+
     @Test
     @DisplayName("자유 배치라 같은 자리에 굿즈를 여러 개 놓을 수 있다")
     void 위치가_겹쳐도_저장된다() {

@@ -223,6 +223,25 @@ class ExhibitionServiceTest {
         }
 
         @Test
+        @DisplayName("비로그인(viewerId=null)이어도 좋아요 여부만 false 로 채워 돌려준다")
+        void 비로그인도_조회할_수_있다() {
+            // 홈 화면(/api/home)이 인증 없이 열려서 viewerId 가 null 로 들어옵니다.
+            Exhibition e = exhibitionWithId(3L, 2L, "인기1위");
+
+            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of(itemOf(e, "thumb.png")));
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getPopular(10, null);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).likedByMe()).isFalse();
+        }
+
+        @Test
         void limit은_최대치를_넘지_않는다() {
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of());
 
