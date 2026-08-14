@@ -26,16 +26,19 @@ class HomeApiSmokeTest {
 
     @Test
     void 데이터가_없어도_홈_응답은_섹션_구조를_유지한다() throws Exception {
+        // 비로그인(익명) 요청입니다. authUser 가 null 인 경로가 exhibitionService.getPopular 까지
+        // 안전하게 흘러가는지(likedByMe=false 로만 채워지고 터지지 않는지) 함께 확인합니다.
         mockMvc.perform(get("/api/home"))
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.banners").isArray())
-                .andExpect(jsonPath("$.data.upcomingPopups").isArray());
+                .andExpect(jsonPath("$.data.upcomingPopups").isArray())
+                .andExpect(jsonPath("$.data.popularExhibitions").isArray());
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "ADMIN")
     void 배너_팝업을_등록하면_홈_응답에_그대로_모여서_내려온다() throws Exception {
         String popupCreateBody = """
                 {

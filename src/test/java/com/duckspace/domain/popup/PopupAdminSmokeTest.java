@@ -26,7 +26,7 @@ class PopupAdminSmokeTest {
     private MockMvc mockMvc;
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "ADMIN")
     void 관리자가_팝업을_등록하면_AI요약_필드까지_포함해서_응답한다() throws Exception {
         String createBody = """
                 {
@@ -87,5 +87,12 @@ class PopupAdminSmokeTest {
         mockMvc.perform(get("/api/admin/popups"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(0));
+    }
+
+    @Test
+    @WithMockUser
+    void 일반_유저는_관리자_API를_호출할_수_없다() throws Exception {
+        mockMvc.perform(get("/api/admin/popups"))
+                .andExpect(status().isForbidden());
     }
 }

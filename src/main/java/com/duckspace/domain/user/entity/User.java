@@ -1,5 +1,6 @@
 package com.duckspace.domain.user.entity;
 
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -42,12 +43,18 @@ public class User extends BaseTimeEntity {
     @Column(name = "auth_provider", nullable = false)
     private AuthProvider authProvider;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "role", nullable = false)
+    private Role role;
+
     @Builder
-    private User(String email, String nickname, String password, AuthProvider authProvider) {
+    private User(String email, String nickname, String password, AuthProvider authProvider, Role role) {
         this.email = email;
         this.nickname = nickname;
         this.password = password;
         this.authProvider = authProvider;
+        this.role = role == null ? Role.USER : role;
     }
 
     public User updateNickname(String nickname) {
