@@ -90,7 +90,8 @@ public class PostService {
     public Long createExchange(Long userId, ExchangePostRequest request) {
         Post post = postRepository.save(Post.createExchange(userId, request.title(), request.content()));
         ExchangeDetail detail = exchangeDetailRepository.save(
-                new ExchangeDetail(post, request.method(), request.extraCondition()));
+                new ExchangeDetail(post, request.extraCondition(),
+                        request.preferredPopupName(), request.preferredDate(), request.preferredTime()));
 
         OfferedItemRequest offered = request.offeredItem();
         tradeItemRepository.save(TradeItem.offered(
@@ -127,7 +128,6 @@ public class PostService {
                     return new ExchangePostSummaryResponse(
                             post.getId(),
                             post.getTitle(),
-                            detail.getMethod(),
                             detail.getStatus(),
                             itemNameOf(items, TradeItemSide.OFFERED),
                             itemNameOf(items, TradeItemSide.WANTED),
@@ -164,9 +164,11 @@ public class PostService {
                     .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
             List<TradeItem> items = tradeItemRepository.findByExchangeDetail_PostIdOrderBySideAsc(postId);
             exchangeInfo = new PostDetailResponse.ExchangeInfo(
-                    detail.getMethod(),
                     detail.getStatus(),
                     detail.getExtraCondition(),
+                    detail.getPreferredPopupName(),
+                    detail.getPreferredDate(),
+                    detail.getPreferredTime(),
                     toItemInfo(findBySide(items, TradeItemSide.OFFERED)),
                     toItemInfo(findBySide(items, TradeItemSide.WANTED)));
         }

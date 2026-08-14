@@ -7,7 +7,6 @@ import com.duckspace.domain.post.dto.request.WantedItemRequest;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
 import com.duckspace.domain.post.entity.ExchangeDetail;
-import com.duckspace.domain.post.entity.ExchangeMethod;
 import com.duckspace.domain.post.entity.ItemCondition;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.entity.TradeItem;
@@ -140,10 +139,10 @@ class PostServiceTest {
             given(exchangeDetailRepository.save(any(ExchangeDetail.class))).willAnswer(invocation -> invocation.getArgument(0));
 
             ExchangePostRequest request = new ExchangePostRequest(
-                    ExchangeMethod.DIRECT, "제목", "본문",
+                    "제목", "본문",
                     new OfferedItemRequest("offer.png", "인형", "브랜드A", ItemCondition.UNOPENED),
                     new WantedItemRequest("want.png", "키링", "브랜드B"),
-                    "직거래만 가능");
+                    "직거래만 가능", "치이카와 in 성수", "260809", "12시부터14시까지");
 
             Long postId = postService.createExchange(10L, request);
 
@@ -186,7 +185,7 @@ class PostServiceTest {
         @Test
         void 교환글이면_exchangeInfo를_채운다() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, ExchangeMethod.DELIVERY, "택배비 반반");
+            ExchangeDetail detail = new ExchangeDetail(post, "택배비 반반", "치이카와 in 성수", "260809", "12시부터14시까지");
             TradeItem offered = TradeItem.offered(detail, "offer.png", "인형", "브랜드A", ItemCondition.LIGHTLY_USED);
             TradeItem wanted = TradeItem.wanted(detail, null, "키링", null);
 
@@ -199,6 +198,7 @@ class PostServiceTest {
             assertThat(response.exchangeInfo()).isNotNull();
             assertThat(response.exchangeInfo().offeredItem().itemName()).isEqualTo("인형");
             assertThat(response.exchangeInfo().wantedItem().itemName()).isEqualTo("키링");
+            assertThat(response.exchangeInfo().preferredPopupName()).isEqualTo("치이카와 in 성수");
             assertThat(response.mine()).isFalse();
             assertThat(response.imageUrls()).isEmpty();
         }
@@ -320,7 +320,7 @@ class PostServiceTest {
         @Test
         void 정상적으로_완료_처리한다() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, ExchangeMethod.DIRECT, null);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
             given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
 
@@ -332,7 +332,7 @@ class PostServiceTest {
         @Test
         void 이미_완료된_글이면_예외() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, ExchangeMethod.DIRECT, null);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             detail.complete();
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
             given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
