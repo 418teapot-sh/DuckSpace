@@ -15,23 +15,33 @@ public class OpenAiSummaryClient {
 
     private final RestClient restClient;
     private final String model;
+    private final boolean enabled;
 
     public OpenAiSummaryClient(
             @Value("${openai.api-key}") String apiKey,
             @Value("${openai.model}") String model
     ) {
         this.model = model;
+        this.enabled = apiKey != null && !apiKey.isBlank();
         this.restClient = RestClient.builder()
                 .baseUrl("https://api.openai.com/v1")
                 .defaultHeader("Authorization", "Bearer "+apiKey)
                 .build();
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     public String summarizeSchedule(String title, String description, LocalDate startDate, LocalDate endDate) {
-        String userContent = """                                                                                                                               
-                  제목: %s                                                                                                                                       
-                  기간: %s ~ %s                                                                                                                                  
-                  설명: %s                                                                                                                                       
+        if (!enabled) {
+            return null;
+        }
+
+        String userContent = """
+                  제목: %s
+                  기간: %s ~ %s
+                  설명: %s
                   """.formatted(title, startDate, endDate, description);
 
         try {
