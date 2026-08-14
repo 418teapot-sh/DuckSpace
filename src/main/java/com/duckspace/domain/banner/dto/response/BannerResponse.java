@@ -13,7 +13,8 @@ public record BannerResponse(
         Long popupId,
         LocalDateTime startAt,
         LocalDateTime endAt,
-        int sortOrder
+        int sortOrder,
+        boolean active
 ) {
     public static BannerResponse from(Banner banner) {
         return new BannerResponse(
@@ -25,7 +26,8 @@ public record BannerResponse(
                 banner.getPopupId(),
                 banner.getStartAt(),
                 banner.getEndAt(),
-                banner.getSortOrder()
+                banner.getSortOrder(),
+                banner.isActive()
         );
     }
 }

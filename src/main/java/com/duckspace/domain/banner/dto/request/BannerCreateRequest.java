@@ -12,6 +12,8 @@ public record BannerCreateRequest(
         @NotNull Long popupId,
         @NotNull LocalDateTime startAt,
         @NotNull LocalDateTime endAt,
-        int sortOrder
+        int sortOrder,
+        /** 생략하면 true(노출)로 등록됩니다. */
+        Boolean active
 ) {
 }

@@ -12,6 +12,8 @@ public record BannerUpdateRequest(
         @NotNull Long popupId,
         @NotNull LocalDateTime startAt,
         @NotNull LocalDateTime endAt,
-        int sortOrder
+        int sortOrder,
+        /** 생략하면 true(노출)로 저장됩니다. 급하게 내려야 하면 false로 보내세요. */
+        Boolean active
 ) {
 }

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 import com.duckspace.domain.banner.dto.request.BannerCreateRequest;
@@ -22,13 +23,16 @@ import com.duckspace.global.exception.BusinessException;
 @Transactional(readOnly = true)
 public class BannerService {
 
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
+
     private final BannerRepository bannerRepository;
     private final BannerSummaryClient bannerSummaryClient;
 
     public BannerListResponse getActiveBanners() {
-        LocalDateTime now = LocalDateTime.now();
+        // 서버(JVM) 기본 타임존에 기대지 않도록 명시적으로 Asia/Seoul 기준 현재 시각을 씁니다.
+        LocalDateTime now = LocalDateTime.now(SERVICE_ZONE);
         List<BannerResponse> banners = bannerRepository
-                .findAllByStartAtLessThanEqualAndEndAtGreaterThanEqualOrderBySortOrderAsc(now, now)
+                .findAllByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderBySortOrderAsc(now, now)
                 .stream()
                 .map(BannerResponse::from)
                 .toList();
@@ -58,6 +62,7 @@ public class BannerService {
                 .startAt(request.startAt())
                 .endAt(request.endAt())
                 .sortOrder(request.sortOrder())
+                .active(request.active())
                 .build();
 
         return BannerResponse.from(bannerRepository.save(banner));
@@ -79,7 +84,8 @@ public class BannerService {
                 request.popupId(),
                 request.startAt(),
                 request.endAt(),
-                request.sortOrder()
+                request.sortOrder(),
+                request.active()
         );
         return BannerResponse.from(banner);
     }

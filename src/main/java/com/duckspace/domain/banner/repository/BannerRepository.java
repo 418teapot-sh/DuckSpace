@@ -10,6 +10,6 @@ public interface BannerRepository extends JpaRepository<Banner, Long> {
 
     List<Banner> findAllByOrderBySortOrderAsc();
 
-    List<Banner> findAllByStartAtLessThanEqualAndEndAtGreaterThanEqualOrderBySortOrderAsc(
+    List<Banner> findAllByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderBySortOrderAsc(
             LocalDateTime startAt, LocalDateTime endAt);
 }
