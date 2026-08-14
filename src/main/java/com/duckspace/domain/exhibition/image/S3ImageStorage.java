@@ -52,7 +52,7 @@ public class S3ImageStorage implements ImageStorage {
                 .build();
         this.publicBaseUrl = publicBaseUrl.isBlank()
                 ? "https://%s.s3.%s.amazonaws.com".formatted(bucket, region)
-                : publicBaseUrl.replaceAll("/+$", "");
+                : StorageUrls.normalizeBaseUrl(publicBaseUrl);
     }
 
     @Override
@@ -98,11 +98,7 @@ public class S3ImageStorage implements ImageStorage {
         }
     }
 
-    /** 우리가 만든 URL 이 아니면 건드리지 않습니다. */
     private String keyFrom(String imageUrl) {
-        if (imageUrl == null || !imageUrl.startsWith(publicBaseUrl + "/")) {
-            return null;
-        }
-        return imageUrl.substring(publicBaseUrl.length() + 1);
+        return StorageUrls.keyFrom(publicBaseUrl, imageUrl);
     }
 }

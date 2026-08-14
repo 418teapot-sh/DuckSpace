@@ -4,11 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -91,11 +90,13 @@ public class RemoveBgClient {
                     response.statusCode(), new String(response.body(), StandardCharsets.UTF_8)));
         }
 
-        BufferedImage result = ImageIO.read(new ByteArrayInputStream(response.body()));
-        if (result == null) {
-            throw new IOException("remove.bg 응답을 이미지로 읽지 못했습니다.");
+        // 응답도 픽셀 수 제한을 거쳐 디코딩합니다. 우리가 부른 API 라도 가드를 건너뛰면,
+        // 이쪽이 실사용 경로(키가 있는 배포 환경)라서 보호가 사실상 없는 것과 같습니다.
+        try {
+            return ImageInspector.read(response.body());
+        } catch (UncheckedIOException e) {
+            throw new IOException("remove.bg 응답을 이미지로 읽지 못했습니다.", e.getCause());
         }
-        return result;
     }
 
     private byte[] buildBody(String boundary, byte[] imageBytes, String fileName) throws IOException {

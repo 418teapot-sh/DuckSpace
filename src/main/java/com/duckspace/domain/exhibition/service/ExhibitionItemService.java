@@ -10,6 +10,7 @@ import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.image.ImageCleanup;
+import com.duckspace.domain.exhibition.image.ImageInspector;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
@@ -68,7 +69,10 @@ public class ExhibitionItemService {
     public ExhibitionItemResponse upload(Long exhibitionId, Long userId,
                                           MultipartFile image, UploadItemRequest request) {
         Exhibition exhibition = exhibitionService.getOwnedExhibition(exhibitionId, userId);
-        validateImage(image);
+
+        // 행을 만들기 전에 바이트까지 확인합니다. 나중에 걸러내면 PENDING 인 껍데기가 남습니다.
+        byte[] data = readBytes(image);
+        validateImage(image, data);
 
         ExhibitionItem item = new ExhibitionItem(
                 exhibition, request.placement().toPlacement(), null,
@@ -76,7 +80,6 @@ public class ExhibitionItemService {
 
         ExhibitionItem saved = exhibitionItemRepository.save(item);
 
-        byte[] data = readBytes(image);
         String fileName = image.getOriginalFilename() == null ? "upload.png" : image.getOriginalFilename();
         eventPublisher.publishEvent(
                 new ItemImageUploadedEvent(saved.getId(), exhibition.getId(), data, fileName));
@@ -184,12 +187,23 @@ public class ExhibitionItemService {
         return item;
     }
 
-    private void validateImage(MultipartFile image) {
-        if (image == null || image.isEmpty()) {
+    /**
+     * 업로드된 파일이 정말 이미지인지 확인합니다.
+     *
+     * <p><b>{@code Content-Type} 헤더만 믿으면 안 됩니다.</b> 클라이언트가 보내는 값이라
+     * 아무 파일에나 {@code image/png} 를 붙일 수 있고, 그러면 처리에 실패한 뒤 원본이 그대로
+     * 저장되어 <b>공개 URL 로 서빙됩니다</b> — 업로드 창구가 곧 파일 호스팅이 됩니다.
+     * 그래서 실제 바이트를 디코더에 물어봅니다.
+     */
+    private void validateImage(MultipartFile image, byte[] data) {
+        if (image == null || image.isEmpty() || data.length == 0) {
             throw new BusinessException(ExhibitionErrorCode.EMPTY_IMAGE);
         }
         String contentType = image.getContentType();
         if (contentType == null || !SUPPORTED_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
+            throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
+        }
+        if (!ImageInspector.isSupported(data)) {
             throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
         }
     }

@@ -1,5 +1,6 @@
 package com.duckspace.domain.exhibition.service;
 
+import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.exhibition.image.RemoveBgClient;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,9 @@ class ExhibitionImageProcessorTest {
     private ImageStorage imageStorage;
 
     @Mock
+    private ImageCleanup imageCleanup;
+
+    @Mock
     private ExhibitionItemStatusWriter statusWriter;
 
     private ExhibitionImageProcessor processor;
@@ -56,7 +60,8 @@ class ExhibitionImageProcessorTest {
     void setUp() throws IOException {
         imageBytes = pngBytes(200, 200);
         processor = new ExhibitionImageProcessor(
-                removeBgClient, imageStorage, statusWriter, task -> directExecutor.execute(task));
+                removeBgClient, imageStorage, imageCleanup, statusWriter,
+                task -> directExecutor.execute(task));
     }
 
     private byte[] pngBytes(int w, int h) throws IOException {
@@ -237,6 +242,21 @@ class ExhibitionImageProcessorTest {
         verify(imageStorage, never()).upload(anyString(), any(), anyString());
     }
 
+    @Test
+    @DisplayName("상태 기록이 실패하면 방금 올린 처리본을 회수한다")
+    void 상태_기록_실패하면_고아_객체를_남기지_않는다() {
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/result.png");
+        // 업로드는 됐는데 DB 기록이 깨진 상황.
+        org.mockito.BDDMockito.willThrow(new RuntimeException("DB down"))
+                .given(statusWriter).markReady(anyLong(), anyString());
+
+        handle();
+
+        // 회수하지 않으면 DB 어디에도 주소가 없는 객체가 영원히 남습니다.
+        verify(imageCleanup).delete("https://cdn/result.png");
+    }
+
     // ------------------------------------------------------------------
     // 재처리
     // ------------------------------------------------------------------
@@ -269,7 +289,7 @@ class ExhibitionImageProcessorTest {
         handleRetry();
 
         // 처리본이 원본을 대체했으므로 남겨둘 이유가 없습니다.
-        verify(imageStorage).deleteByUrl(SOURCE_URL);
+        verify(imageCleanup).delete(SOURCE_URL);
     }
 
     @Test
@@ -281,7 +301,7 @@ class ExhibitionImageProcessorTest {
 
         // null 로 덮으면 다시 시도할 방법이 사라집니다.
         verify(statusWriter).markFailed(ITEM_ID, SOURCE_URL);
-        verify(imageStorage, never()).deleteByUrl(anyString());
+        verify(imageCleanup, never()).delete(anyString());
     }
 
     @Test

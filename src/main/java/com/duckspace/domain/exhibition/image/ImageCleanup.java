@@ -1,13 +1,15 @@
 package com.duckspace.domain.exhibition.image;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * 굿즈가 지워질 때 실제 이미지 파일도 함께 정리합니다.
@@ -18,13 +20,23 @@ import java.util.List;
  * <p><b>커밋 이후에 지우는 이유:</b> 트랜잭션 안에서 지우면 뒤에 롤백이 났을 때
  * DB 행은 살아있는데 이미지만 사라져, 화면에 깨진 굿즈가 남습니다. 되돌릴 수 없는 작업이라
  * 되돌릴 일이 없어진 다음에 합니다.
+ *
+ * <p><b>백그라운드로 넘기는 이유:</b> 장식장을 지우면 안에 있던 굿즈 수만큼 S3 왕복이 생깁니다.
+ * 그걸 요청 스레드에서 하나씩 하면 굿즈가 많을수록 삭제 응답이 느려집니다. 사용자 입장에서
+ * 삭제는 이미 끝난 일이라 기다릴 이유가 없습니다.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ImageCleanup {
 
     private final ImageStorage imageStorage;
+    private final Executor imageExecutor;
+
+    public ImageCleanup(ImageStorage imageStorage,
+                        @Qualifier("exhibitionImageExecutor") Executor imageExecutor) {
+        this.imageStorage = imageStorage;
+        this.imageExecutor = imageExecutor;
+    }
 
     /** 한 장짜리 편의 메서드. {@code null} 이면 아무것도 하지 않습니다. */
     public void deleteAfterCommit(String imageUrl) {
@@ -32,37 +44,59 @@ public class ImageCleanup {
     }
 
     /**
-     * 트랜잭션이 커밋되면 이미지를 지웁니다. 트랜잭션 밖에서 부르면 즉시 지웁니다.
-     *
-     * <p>삭제 실패는 로그만 남깁니다. 파일이 남는 것보다 "삭제했습니다" 응답이 실패하는 쪽이
-     * 사용자에게 더 나쁩니다.
+     * 트랜잭션이 커밋되면 이미지를 지웁니다. 트랜잭션 밖에서 부르면 바로 예약합니다.
      */
     public void deleteAfterCommit(List<String> imageUrls) {
-        List<String> targets = imageUrls.stream().filter(url -> url != null && !url.isBlank()).toList();
+        List<String> targets = clean(imageUrls);
         if (targets.isEmpty()) {
             return;
         }
 
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            delete(targets);
+            submit(targets);
             return;
         }
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                delete(targets);
+                submit(targets);
             }
         });
     }
 
-    private void delete(List<String> imageUrls) {
-        for (String url : imageUrls) {
-            try {
-                imageStorage.deleteByUrl(url);
-            } catch (Exception e) {
-                log.warn("이미지 정리 실패: {} ({})", url, e.toString());
-            }
+    /**
+     * 지금 바로 지웁니다. 트랜잭션과 무관한 곳(백그라운드 이미지 처리)에서 씁니다.
+     *
+     * <p>실패는 로그만 남깁니다. 이미 다른 일이 성공한 뒤라, 정리에 실패했다고 그 일을
+     * 되돌릴 수는 없습니다.
+     */
+    public void delete(String imageUrl) {
+        for (String url : clean(Collections.singletonList(imageUrl))) {
+            deleteQuietly(url);
         }
+    }
+
+    private void submit(List<String> imageUrls) {
+        try {
+            imageExecutor.execute(() -> imageUrls.forEach(this::deleteQuietly));
+        } catch (RejectedExecutionException e) {
+            // 큐가 가득 찼습니다. 정리를 통째로 건너뛰면 객체가 영영 남으므로,
+            // 느려지더라도 이 자리에서 지웁니다.
+            log.warn("이미지 정리를 큐에 넣지 못해 즉시 처리합니다. {}건", imageUrls.size());
+            imageUrls.forEach(this::deleteQuietly);
+        }
+    }
+
+    private void deleteQuietly(String imageUrl) {
+        try {
+            imageStorage.deleteByUrl(imageUrl);
+        } catch (Exception e) {
+            log.warn("이미지 정리 실패: {} ({})", imageUrl, e.toString());
+        }
+    }
+
+    private static List<String> clean(List<String> imageUrls) {
+        return imageUrls.stream().filter(url -> url != null && !url.isBlank()).toList();
     }
 }

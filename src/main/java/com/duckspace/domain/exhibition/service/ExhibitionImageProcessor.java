@@ -1,6 +1,8 @@
 package com.duckspace.domain.exhibition.service;
 
 import com.duckspace.domain.exhibition.image.GoodsImageProcessor;
+import com.duckspace.domain.exhibition.image.ImageCleanup;
+import com.duckspace.domain.exhibition.image.ImageInspector;
 import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.exhibition.image.RemoveBgClient;
 import lombok.extern.slf4j.Slf4j;
@@ -10,14 +12,9 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.awt.image.RenderedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.Iterator;
-import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -44,39 +41,26 @@ public class ExhibitionImageProcessor {
     /** 출력 크기. 실제 사진으로 검증한 값입니다. remove.bg 무료 출력(0.25MP)에서 업스케일이 없습니다. */
     private static final int OUTPUT_SIZE = 384;
 
-    /**
-     * 디코딩을 허용하는 최대 픽셀 수.
-     *
-     * <p>업로드 용량 제한(10MB)은 <b>디코딩 후 크기를 제한하지 못합니다.</b> 고압축 PNG 는
-     * 몇 MB 로도 1억 픽셀짜리 캔버스가 될 수 있고, ARGB 로 펼치면 픽셀당 4바이트라
-     * 수백 MB 를 잡아먹습니다. 스레드 둘이 동시에 그러면 작은 EC2 는 그대로 죽습니다.
-     * 4000x3000(1200만) 짜리 폰 사진이 넉넉히 들어가는 선으로 잡았습니다.
-     */
-    private static final long MAX_PIXELS = 40_000_000L;
-
     private static final String PNG = "png";
     private static final String PNG_CONTENT_TYPE = "image/png";
 
     /** 재처리 때 remove.bg 에 보낼 파일명. 원본 파일명은 남겨두지 않습니다. */
     private static final String RETRY_FILE_NAME = "retry.png";
 
-    static {
-        // 기본값(true)이면 ImageIO 가 읽고 쓸 때마다 임시파일을 거칩니다.
-        // 이 파이프라인은 1024px 로 줄여 메모리 안에서 끝내도록 만든 것이라 디스크를 탈 이유가 없습니다.
-        ImageIO.setUseCache(false);
-    }
-
     private final RemoveBgClient removeBgClient;
     private final ImageStorage imageStorage;
+    private final ImageCleanup imageCleanup;
     private final ExhibitionItemStatusWriter statusWriter;
     private final Executor imageExecutor;
 
     public ExhibitionImageProcessor(RemoveBgClient removeBgClient,
                                     ImageStorage imageStorage,
+                                    ImageCleanup imageCleanup,
                                     ExhibitionItemStatusWriter statusWriter,
                                     @Qualifier(ExhibitionAsyncConfig.IMAGE_EXECUTOR) Executor imageExecutor) {
         this.removeBgClient = removeBgClient;
         this.imageStorage = imageStorage;
+        this.imageCleanup = imageCleanup;
         this.statusWriter = statusWriter;
         this.imageExecutor = imageExecutor;
     }
@@ -151,12 +135,19 @@ public class ExhibitionImageProcessor {
             String url = imageStorage.upload(
                     keyFor(event.exhibitionId(), "." + PNG), toBytes(processed), PNG_CONTENT_TYPE);
 
-            statusWriter.markReady(itemId, url);
+            try {
+                statusWriter.markReady(itemId, url);
+            } catch (Exception e) {
+                // 방금 올린 처리본을 아무도 가리키지 않게 됐습니다. 여기서 회수하지 않으면
+                // DB 어디에도 주소가 없는 고아 객체로 영원히 남습니다.
+                imageCleanup.delete(url);
+                throw e;
+            }
             log.info("이미지 처리 완료. itemId={}", itemId);
 
             // 처리본이 원본을 대체했으므로 남겨뒀던 원본은 지웁니다. 상태를 먼저 바꾼 뒤에
             // 지워야, 삭제가 실패해도 화면에는 정상 이미지가 보입니다.
-            deleteQuietly(existingSourceUrl);
+            imageCleanup.delete(existingSourceUrl);
 
         } catch (InterruptedException e) {
             // 인터럽트는 "실패" 가 아니라 "그만두라는 신호" 입니다. 삼키면 종료가 지연되고,
@@ -176,17 +167,6 @@ public class ExhibitionImageProcessor {
         return existingSourceUrl != null ? existingSourceUrl : storeOriginalQuietly(event);
     }
 
-    private void deleteQuietly(String imageUrl) {
-        if (imageUrl == null) {
-            return;
-        }
-        try {
-            imageStorage.deleteByUrl(imageUrl);
-        } catch (Exception e) {
-            log.warn("재처리 후 원본 정리 실패: {} ({})", imageUrl, e.toString());
-        }
-    }
-
     /**
      * 배경을 제거합니다. 키가 없거나 호출이 실패하면 원본을 그대로 씁니다.
      *
@@ -199,7 +179,7 @@ public class ExhibitionImageProcessor {
     private BufferedImage removeBackgroundOrOriginal(byte[] imageData, String fileName)
             throws Exception {
         if (!removeBgClient.isEnabled()) {
-            return readImage(imageData);
+            return ImageInspector.read(imageData);
         }
         try {
             return removeBgClient.removeBackground(imageData, fileName);
@@ -207,7 +187,7 @@ public class ExhibitionImageProcessor {
             throw e;
         } catch (Exception e) {
             log.warn("배경 제거에 실패해 원본으로 진행합니다: {}", e.toString());
-            return readImage(imageData);
+            return ImageInspector.read(imageData);
         }
     }
 
@@ -216,7 +196,7 @@ public class ExhibitionImageProcessor {
         try {
             // 원본이 JPEG 인데 .png 로 저장하면 실제 바이트와 확장자·Content-Type 이 어긋나
             // 브라우저가 그림을 그리지 못합니다. 바이트에서 실제 포맷을 읽어 맞춥니다.
-            String format = detectFormat(event.imageData());
+            String format = ImageInspector.detectFormat(event.imageData()).orElse(PNG);
             return imageStorage.upload(
                     keyFor(event.exhibitionId(), "-origin." + format),
                     event.imageData(),
@@ -225,54 +205,6 @@ public class ExhibitionImageProcessor {
             log.warn("원본 저장도 실패했습니다. itemId={}", event.itemId());
             return null;
         }
-    }
-
-    /**
-     * 바이트를 이미지로 읽습니다. <b>디코딩 전에 픽셀 수를 먼저 확인합니다.</b>
-     *
-     * <p>{@code ImageIO.read} 는 크기를 확인할 틈 없이 통째로 펼쳐버리므로, 헤더만 읽는
-     * {@link ImageReader} 로 크기를 먼저 보고 거릅니다.
-     */
-    private static BufferedImage readImage(byte[] data) throws Exception {
-        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
-            ImageReader reader = firstReader(input);
-            try {
-                long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
-                if (pixels > MAX_PIXELS) {
-                    throw new IllegalArgumentException(
-                            "이미지가 너무 큽니다: %d 픽셀 (허용 %d)".formatted(pixels, MAX_PIXELS));
-                }
-                return reader.read(0);
-            } finally {
-                reader.dispose();
-            }
-        }
-    }
-
-    /** 바이트가 어떤 포맷인지 헤더로 판별합니다. 못 읽으면 png 로 둡니다. */
-    private static String detectFormat(byte[] data) {
-        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
-            ImageReader reader = firstReader(input);
-            try {
-                String format = reader.getFormatName().toLowerCase(Locale.ROOT);
-                // ImageIO 는 JPEG 를 "JPEG" 로 돌려주는데 MIME 타입은 image/jpeg 입니다.
-                return format.equals("jpg") ? "jpeg" : format;
-            } finally {
-                reader.dispose();
-            }
-        } catch (Exception e) {
-            return PNG;
-        }
-    }
-
-    private static ImageReader firstReader(ImageInputStream input) {
-        Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
-        if (!readers.hasNext()) {
-            throw new IllegalArgumentException("이미지로 읽을 수 없는 파일입니다.");
-        }
-        ImageReader reader = readers.next();
-        reader.setInput(input);
-        return reader;
     }
 
     private static String keyFor(Long exhibitionId, String suffix) {

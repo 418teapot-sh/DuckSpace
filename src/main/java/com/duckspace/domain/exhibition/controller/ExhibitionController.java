@@ -158,7 +158,7 @@ public class ExhibitionController {
                                                         @PathVariable Long exhibitionId,
                                                         @PathVariable Long itemId) {
         return ApiResponse.success(
-                exhibitionItemService.get(exhibitionId, itemId, authUser.getUserId()));
+                exhibitionItemService.get(exhibitionId, itemId, viewerId(authUser)));
     }
 
     @Operation(summary = "실패한 굿즈 다시 처리",

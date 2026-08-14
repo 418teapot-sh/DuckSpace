@@ -191,13 +191,18 @@ class ExhibitionItemServiceTest {
                     "image", "goods.png", "image/png", bytes);
         }
 
+        /** 헤더뿐 아니라 바이트까지 검사하므로 진짜 PNG 여야 통과합니다. */
+        private org.springframework.mock.web.MockMultipartFile validPng() throws Exception {
+            return png(realPngBytes());
+        }
+
         private com.duckspace.domain.exhibition.dto.request.UploadItemRequest uploadRequest() {
             return new com.duckspace.domain.exhibition.dto.request.UploadItemRequest(
                     new PlacementRequest(0.3, 0.4, 0.2, 0.2), "치이카와 인형", 15000, "귀여움");
         }
 
         @Test
-        void 접수만_하고_PENDING_으로_응답한다() {
+        void 접수만_하고_PENDING_으로_응답한다() throws Exception {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
                     .willAnswer(inv -> {
@@ -207,7 +212,7 @@ class ExhibitionItemServiceTest {
                     });
 
             ExhibitionItemResponse response =
-                    exhibitionItemService.upload(EXHIBITION_ID, OWNER, png(new byte[]{1, 2, 3}), uploadRequest());
+                    exhibitionItemService.upload(EXHIBITION_ID, OWNER, validPng(), uploadRequest());
 
             assertThat(response.itemId()).isEqualTo(7L);
             assertThat(response.status()).isEqualTo(ItemStatus.PENDING);
@@ -216,7 +221,7 @@ class ExhibitionItemServiceTest {
         }
 
         @Test
-        void 커밋_이후_처리되도록_이벤트를_발행한다() {
+        void 커밋_이후_처리되도록_이벤트를_발행한다() throws Exception {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
                     .willAnswer(inv -> {
@@ -225,7 +230,7 @@ class ExhibitionItemServiceTest {
                         return saved;
                     });
 
-            exhibitionItemService.upload(EXHIBITION_ID, OWNER, png(new byte[]{1, 2, 3}), uploadRequest());
+            exhibitionItemService.upload(EXHIBITION_ID, OWNER, validPng(), uploadRequest());
 
             org.mockito.ArgumentCaptor<ItemImageUploadedEvent> captor =
                     org.mockito.ArgumentCaptor.forClass(ItemImageUploadedEvent.class);
@@ -260,6 +265,45 @@ class ExhibitionItemServiceTest {
             assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
         }
 
+        @Test
+        void 이미지가_아닌_바이트는_헤더를_속여도_거부한다() {
+            // Content-Type 은 클라이언트가 보내는 값이라 믿을 수 없습니다.
+            // 이걸 막지 않으면 업로드 창구가 그대로 파일 호스팅이 됩니다.
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            var disguised = new org.springframework.mock.web.MockMultipartFile(
+                    "image", "goods.png", "image/png", "#!/bin/sh\necho hi".getBytes());
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.upload(EXHIBITION_ID, OWNER, disguised, uploadRequest()));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
+            verify(exhibitionItemRepository, never()).save(any(ExhibitionItem.class));
+            verify(eventPublisher, never()).publishEvent(any(ItemImageUploadedEvent.class));
+        }
+
+        @Test
+        void 진짜_PNG_는_통과한다() throws Exception {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
+                    .willAnswer(inv -> {
+                        ExhibitionItem saved = inv.getArgument(0);
+                        ReflectionTestUtils.setField(saved, "id", 7L);
+                        return saved;
+                    });
+
+            var real = new org.springframework.mock.web.MockMultipartFile(
+                    "image", "goods.png", "image/png", realPngBytes());
+
+            assertThat(exhibitionItemService.upload(EXHIBITION_ID, OWNER, real, uploadRequest()).status())
+                    .isEqualTo(ItemStatus.PENDING);
+        }
+
+        private byte[] realPngBytes() throws Exception {
+            var img = new java.awt.image.BufferedImage(20, 20, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            var out = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(img, "png", out);
+            return out.toByteArray();
+        }
     }
 
     @Nested

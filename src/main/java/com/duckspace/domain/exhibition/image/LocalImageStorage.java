@@ -30,7 +30,7 @@ public class LocalImageStorage implements ImageStorage {
     public LocalImageStorage(@Value("${storage.local.directory:./uploads}") String directory,
                              @Value("${storage.local.public-base-url:http://localhost:8080/uploads}") String publicBaseUrl) {
         this.root = Path.of(directory).toAbsolutePath().normalize();
-        this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
+        this.publicBaseUrl = StorageUrls.normalizeBaseUrl(publicBaseUrl);
         log.info("로컬 이미지 저장소를 사용합니다: {}", root);
     }
 
@@ -82,11 +82,7 @@ public class LocalImageStorage implements ImageStorage {
         return target;
     }
 
-    /** 우리가 만든 URL 이 아니면 건드리지 않습니다. */
     private String keyFrom(String imageUrl) {
-        if (imageUrl == null || !imageUrl.startsWith(publicBaseUrl + "/")) {
-            return null;
-        }
-        return imageUrl.substring(publicBaseUrl.length() + 1);
+        return StorageUrls.keyFrom(publicBaseUrl, imageUrl);
     }
 }
