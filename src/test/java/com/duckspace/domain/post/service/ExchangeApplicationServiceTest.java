@@ -5,6 +5,7 @@ import com.duckspace.domain.post.dto.response.ExchangeApplicationResponse;
 import com.duckspace.domain.post.entity.ExchangeApplication;
 import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
 import com.duckspace.domain.post.entity.ExchangeDetail;
+import com.duckspace.domain.post.entity.ItemCondition;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -77,7 +79,8 @@ class ExchangeApplicationServiceTest {
     }
 
     private ExchangeApplication application(Long id, Long postId, Long applicantUserId) {
-        ExchangeApplication application = new ExchangeApplication(postId, applicantUserId, "인형", null, "잘 부탁드려요");
+        ExchangeApplication application = new ExchangeApplication(postId, applicantUserId, "인형", null,
+                "브랜드A", ItemCondition.UNOPENED, "잘 부탁드려요");
         ReflectionTestUtils.setField(application, "id", id);
         return application;
     }
@@ -105,9 +108,13 @@ class ExchangeApplicationServiceTest {
             });
 
             Long applicationId = exchangeApplicationService.apply(20L, 1L,
-                    new ExchangeApplicationRequest("인형", "offer.png", "잘 부탁드려요"));
+                    new ExchangeApplicationRequest("인형", "offer.png", "브랜드A", ItemCondition.UNOPENED, "잘 부탁드려요"));
 
             assertThat(applicationId).isEqualTo(100L);
+            ArgumentCaptor<ExchangeApplication> captor = ArgumentCaptor.forClass(ExchangeApplication.class);
+            verify(exchangeApplicationRepository).save(captor.capture());
+            assertThat(captor.getValue().getOfferedBrand()).isEqualTo("브랜드A");
+            assertThat(captor.getValue().getOfferedCondition()).isEqualTo(ItemCondition.UNOPENED);
         }
 
         @Test
@@ -116,7 +123,8 @@ class ExchangeApplicationServiceTest {
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> exchangeApplicationService.apply(10L, 1L, new ExchangeApplicationRequest("인형", null, null)));
+                    () -> exchangeApplicationService.apply(10L, 1L,
+                            new ExchangeApplicationRequest("인형", null, null, null, null)));
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.SELF_APPLICATION_NOT_ALLOWED);
             verify(exchangeApplicationRepository, never()).save(any());
@@ -131,7 +139,8 @@ class ExchangeApplicationServiceTest {
             given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> exchangeApplicationService.apply(20L, 1L, new ExchangeApplicationRequest("인형", null, null)));
+                    () -> exchangeApplicationService.apply(20L, 1L,
+                            new ExchangeApplicationRequest("인형", null, null, null, null)));
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.EXCHANGE_ALREADY_COMPLETED);
             verify(exchangeApplicationRepository, never()).save(any());
@@ -144,7 +153,8 @@ class ExchangeApplicationServiceTest {
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> exchangeApplicationService.apply(20L, 1L, new ExchangeApplicationRequest("인형", null, null)));
+                    () -> exchangeApplicationService.apply(20L, 1L,
+                            new ExchangeApplicationRequest("인형", null, null, null, null)));
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.INVALID_BOARD_TYPE);
         }

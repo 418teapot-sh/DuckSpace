@@ -1,6 +1,7 @@
 package com.duckspace.domain.post.dto.response;
 
 import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
+import com.duckspace.domain.post.entity.ItemCondition;
 
 import java.time.LocalDateTime;
 
@@ -12,6 +13,8 @@ public record ExchangeApplicationResponse(
         String applicantNickname,
         String offeredItemName,
         String offeredImageUrl,
+        String offeredBrand,
+        ItemCondition offeredCondition,
         String message,
         ExchangeApplicationStatus status,
         LocalDateTime appliedAt,

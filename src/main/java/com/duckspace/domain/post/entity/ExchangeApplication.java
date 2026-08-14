@@ -33,6 +33,7 @@ public class ExchangeApplication {
 
     public static final int OFFERED_ITEM_NAME_MAX_LENGTH = TradeItem.ITEM_NAME_MAX_LENGTH;
     public static final int OFFERED_IMAGE_URL_MAX_LENGTH = TradeItem.IMAGE_URL_MAX_LENGTH;
+    public static final int OFFERED_BRAND_MAX_LENGTH = TradeItem.BRAND_MAX_LENGTH;
     public static final int MESSAGE_MAX_LENGTH = 200;
 
     @Id
@@ -52,6 +53,15 @@ public class ExchangeApplication {
     @Column(name = "offered_image_url", length = OFFERED_IMAGE_URL_MAX_LENGTH)
     private String offeredImageUrl;
 
+    @Column(name = "offered_brand", length = OFFERED_BRAND_MAX_LENGTH)
+    private String offeredBrand;
+
+    /** 신청하는 굿즈의 상태. TradeItem.condition과 같은 의미(선택). */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "offered_condition")
+    private ItemCondition offeredCondition;
+
     @Column(name = "message", length = MESSAGE_MAX_LENGTH)
     private String message;
 
@@ -70,11 +80,14 @@ public class ExchangeApplication {
     private LocalDateTime completedAt;
 
     public ExchangeApplication(Long postId, Long applicantUserId, String offeredItemName,
-                                String offeredImageUrl, String message) {
+                                String offeredImageUrl, String offeredBrand, ItemCondition offeredCondition,
+                                String message) {
         this.postId = postId;
         this.applicantUserId = applicantUserId;
         this.offeredItemName = offeredItemName;
         this.offeredImageUrl = offeredImageUrl;
+        this.offeredBrand = offeredBrand;
+        this.offeredCondition = offeredCondition;
         this.message = message;
         this.status = ExchangeApplicationStatus.APPLIED;
         this.appliedAt = LocalDateTime.now();

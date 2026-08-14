@@ -56,8 +56,8 @@ public class ExchangeApplicationService {
         }
 
         ExchangeApplication application = exchangeApplicationRepository.save(
-                new ExchangeApplication(postId, userId, request.offeredItemName(),
-                        request.offeredImageUrl(), request.message()));
+                new ExchangeApplication(postId, userId, request.offeredItemName(), request.offeredImageUrl(),
+                        request.offeredBrand(), request.offeredCondition(), request.message()));
         return application.getId();
     }
 
@@ -182,6 +182,8 @@ public class ExchangeApplicationService {
                 applicantNickname,
                 application.getOfferedItemName(),
                 application.getOfferedImageUrl(),
+                application.getOfferedBrand(),
+                application.getOfferedCondition(),
                 application.getMessage(),
                 application.getStatus(),
                 application.getAppliedAt(),

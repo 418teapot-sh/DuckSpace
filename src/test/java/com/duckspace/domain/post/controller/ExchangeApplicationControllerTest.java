@@ -45,7 +45,7 @@ class ExchangeApplicationControllerTest {
 
     @Test
     void apply_offeredItemName_없으면_400() throws Exception {
-        ExchangeApplicationRequest request = new ExchangeApplicationRequest(" ", null, null);
+        ExchangeApplicationRequest request = new ExchangeApplicationRequest(" ", null, null, null, null);
 
         mockMvc.perform(post("/api/posts/exchange/1/applications")
                         .with(user(new AuthUser(1L)))
@@ -57,7 +57,7 @@ class ExchangeApplicationControllerTest {
 
     @Test
     void apply_인증없으면_401() throws Exception {
-        ExchangeApplicationRequest request = new ExchangeApplicationRequest("인형", null, null);
+        ExchangeApplicationRequest request = new ExchangeApplicationRequest("인형", null, null, null, null);
 
         mockMvc.perform(post("/api/posts/exchange/1/applications")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -68,7 +68,7 @@ class ExchangeApplicationControllerTest {
     @Test
     void apply_message_길이초과면_400() throws Exception {
         String tooLongMessage = "a".repeat(ExchangeApplication.MESSAGE_MAX_LENGTH + 1);
-        ExchangeApplicationRequest request = new ExchangeApplicationRequest("인형", null, tooLongMessage);
+        ExchangeApplicationRequest request = new ExchangeApplicationRequest("인형", null, null, null, tooLongMessage);
 
         mockMvc.perform(post("/api/posts/exchange/1/applications")
                         .with(user(new AuthUser(1L)))
