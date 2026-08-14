@@ -8,6 +8,8 @@ import com.duckspace.domain.post.dto.response.CasualPostSummaryResponse;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
 import com.duckspace.domain.post.entity.BoardType;
+import com.duckspace.domain.post.entity.ExchangeApplication;
+import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
 import com.duckspace.domain.post.entity.ExchangeDetail;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.entity.PostHashtag;
@@ -16,6 +18,7 @@ import com.duckspace.domain.post.entity.TradeItem;
 import com.duckspace.domain.post.entity.TradeItemSide;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
+import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostIdCount;
@@ -49,6 +52,7 @@ public class PostService {
     private final PostImageRepository postImageRepository;
     private final PostHashtagRepository postHashtagRepository;
     private final ExchangeDetailRepository exchangeDetailRepository;
+    private final ExchangeApplicationRepository exchangeApplicationRepository;
     private final TradeItemRepository tradeItemRepository;
     private final PostLikeRepository postLikeRepository;
     private final CommentRepository commentRepository;
@@ -211,6 +215,11 @@ public class PostService {
         post.delete();
     }
 
+    /**
+     * ExchangeApplication이 생기기 전부터 있던 완료 처리 경로입니다. 진행중인 신청이 있다면
+     * {@link ExchangeApplicationService#complete}를 거치는 쪽이 정석이지만, 이 경로로 들어와도
+     * ACCEPTED 상태 신청이 있으면 같이 COMPLETED로 맞춰서 신청 쪽이 영원히 ACCEPTED로 남는 걸 막습니다.
+     */
     @Transactional
     public void completeExchange(Long postId, Long userId) {
         Post post = getOwnedPost(postId, userId);
@@ -222,6 +231,9 @@ public class PostService {
             throw new BusinessException(PostErrorCode.EXCHANGE_ALREADY_COMPLETED);
         }
         detail.complete();
+
+        exchangeApplicationRepository.findByPostIdAndStatus(postId, ExchangeApplicationStatus.ACCEPTED)
+                .ifPresent(ExchangeApplication::complete);
     }
 
     Post getPost(Long postId) {
@@ -229,7 +241,8 @@ public class PostService {
                 .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
     }
 
-    private Post getOwnedPost(Long postId, Long userId) {
+    /** package-private: ExchangeApplicationService도 "글쓴이만" 체크에 재사용합니다. */
+    Post getOwnedPost(Long postId, Long userId) {
         Post post = getPost(postId);
         if (!post.isOwnedBy(userId)) {
             throw new BusinessException(PostErrorCode.NOT_POST_OWNER);
@@ -297,8 +310,7 @@ public class PostService {
 
     private Map<Long, String> batchNicknames(List<Post> posts) {
         List<Long> authorIds = posts.stream().map(Post::getUserId).distinct().toList();
-        return userRepository.findAllById(authorIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getNickname));
+        return userRepository.findNicknamesByIds(authorIds);
     }
 
     /** LIKE 패턴의 %/_/\\ 는 와일드카드로 해석되므로, 검색어에 그대로 들어오면 이스케이프합니다. */

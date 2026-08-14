@@ -15,6 +15,9 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     /** 삭제된 글은 findById로도 보이면 안 되므로, 조회 경로는 전부 이걸 쓰세요. */
     Optional<Post> findByIdAndDeletedAtIsNull(Long id);
 
+    /** 여러 건 배치 조회용. findAllById를 직접 쓰면 소프트 삭제된 글까지 섞여 나오니 이걸 쓰세요. */
+    List<Post> findByIdInAndDeletedAtIsNull(List<Long> ids);
+
     /**
      * 최신순(id desc) 커서 페이지네이션 + 키워드 검색(제목/본문 부분일치).
      * cursor가 null이면 최신 글부터, 값이 있으면 그보다 id가 작은 글부터 내려줍니다.

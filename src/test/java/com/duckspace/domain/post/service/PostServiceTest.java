@@ -6,12 +6,15 @@ import com.duckspace.domain.post.dto.request.OfferedItemRequest;
 import com.duckspace.domain.post.dto.request.WantedItemRequest;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
+import com.duckspace.domain.post.entity.ExchangeApplication;
+import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
 import com.duckspace.domain.post.entity.ExchangeDetail;
 import com.duckspace.domain.post.entity.ItemCondition;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.entity.TradeItem;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
+import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostImageRepository;
@@ -53,6 +56,8 @@ class PostServiceTest {
     @Mock
     private ExchangeDetailRepository exchangeDetailRepository;
     @Mock
+    private ExchangeApplicationRepository exchangeApplicationRepository;
+    @Mock
     private TradeItemRepository tradeItemRepository;
     @Mock
     private PostLikeRepository postLikeRepository;
@@ -66,7 +71,8 @@ class PostServiceTest {
     @BeforeEach
     void setUp() {
         postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
-                exchangeDetailRepository, tradeItemRepository, postLikeRepository, commentRepository, userRepository);
+                exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
+                postLikeRepository, commentRepository, userRepository);
     }
 
     private Post casualPost(Long id, Long userId) {
@@ -327,6 +333,23 @@ class PostServiceTest {
             postService.completeExchange(1L, 10L);
 
             assertThat(detail.isCompleted()).isTrue();
+        }
+
+        @Test
+        void ACCEPTED_상태_신청이_있으면_같이_완료된다() {
+            Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
+            ExchangeApplication application = new ExchangeApplication(1L, 20L, "인형", null, null, null, null);
+            application.accept();
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationRepository.findByPostIdAndStatus(1L, ExchangeApplicationStatus.ACCEPTED))
+                    .willReturn(Optional.of(application));
+
+            postService.completeExchange(1L, 10L);
+
+            assertThat(detail.isCompleted()).isTrue();
+            assertThat(application.getStatus()).isEqualTo(ExchangeApplicationStatus.COMPLETED);
         }
 
         @Test
