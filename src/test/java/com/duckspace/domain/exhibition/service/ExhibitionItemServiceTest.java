@@ -372,6 +372,84 @@ class ExhibitionItemServiceTest {
     }
 
     @Nested
+    @DisplayName("retry 메서드는")
+    class Retry {
+
+        private ExhibitionItem failedItem(String imageUrl) {
+            ExhibitionItem i = new ExhibitionItem(
+                    exhibition, new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3),
+                    imageUrl, "굿즈", null, null, ItemStatus.FAILED);
+            ReflectionTestUtils.setField(i, "id", 5L);
+            return i;
+        }
+
+        @Test
+        void 원본을_다시_태우도록_이벤트를_발행한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L))
+                    .willReturn(Optional.of(failedItem("https://cdn/origin.png")));
+
+            ExhibitionItemResponse response = exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
+
+            assertThat(response.status())
+                    .as("업로드와 같게 즉시 PENDING 으로 돌아와야 폴링을 이어갈 수 있습니다")
+                    .isEqualTo(ItemStatus.PENDING);
+
+            ArgumentCaptor<ItemImageRetryRequestedEvent> captor =
+                    ArgumentCaptor.forClass(ItemImageRetryRequestedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().sourceImageUrl()).isEqualTo("https://cdn/origin.png");
+            assertThat(captor.getValue().exhibitionId()).isEqualTo(EXHIBITION_ID);
+        }
+
+        @Test
+        void 원본_주소를_지우지_않는다() {
+            ExhibitionItem target = failedItem("https://cdn/origin.png");
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+
+            exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
+
+            // 여기서 지우면 재처리가 실패했을 때 다시 시도할 방법이 사라집니다.
+            assertThat(target.getImageUrl()).isEqualTo("https://cdn/origin.png");
+        }
+
+        @Test
+        void 실패한_굿즈가_아니면_거부한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(item(5L)));   // READY
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
+
+            // 처리 중인 것을 또 넣으면 같은 아이템이 두 번 돌아갑니다.
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.ITEM_NOT_RETRYABLE);
+            verify(eventPublisher, never()).publishEvent(any(ItemImageRetryRequestedEvent.class));
+        }
+
+        @Test
+        void 남겨둔_원본이_없으면_다시_올리라고_알려준다() {
+            // 큐가 가득 차 접수 단계에서 실패한 경우 imageUrl 이 비어 있습니다.
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(failedItem(null)));
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.RETRY_SOURCE_MISSING);
+        }
+
+        @Test
+        void 남의_장식장이면_막힌다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, STRANGER))
+                    .willThrow(new BusinessException(ExhibitionErrorCode.NOT_EXHIBITION_OWNER));
+
+            assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, STRANGER));
+        }
+    }
+
+    @Nested
     @DisplayName("delete 메서드는")
     class DeleteItem {
 

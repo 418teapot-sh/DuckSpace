@@ -138,11 +138,18 @@ class ExhibitionControllerSecurityTest {
     }
 
     @Test
-    @DisplayName("숫자가 아닌 경로는 공개 규칙에 걸리지 않는다")
-    void 숫자가_아닌_경로는_공개되지_않는다() throws Exception {
-        // 공개 패턴을 {id:[0-9]+} 로 좁혀둔 이유입니다. /api/exhibitions/* 로 뒀다면
-        // 나중에 누가 /api/exhibitions/mine 같은 걸 추가했을 때 조용히 공개됩니다.
-        mockMvc.perform(get("/api/exhibitions/mine"))
+    @DisplayName("내 장식장 목록은 토큰이 필요하다")
+    void 내_장식장_목록은_차단() throws Exception {
+        // 공개 패턴을 {id:[0-9]+} 로 좁혀둔 이유가 이것입니다. /api/exhibitions/* 로 뒀다면
+        // "내 장식장" 이 통째로 공개됐을 겁니다.
+        mockMvc.perform(get("/api/exhibitions/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("재처리는 토큰이 필요하다")
+    void 재처리는_차단() throws Exception {
+        mockMvc.perform(post("/api/exhibitions/3/items/9/retry"))
                 .andExpect(status().isUnauthorized());
     }
 }

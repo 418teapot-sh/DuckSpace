@@ -26,4 +26,18 @@ public interface ImageStorage {
      * @param imageUrl {@link #upload} 가 돌려줬던 URL. {@code null} 이면 아무것도 하지 않습니다.
      */
     void deleteByUrl(String imageUrl);
+
+    /**
+     * 저장된 이미지를 다시 읽습니다. <b>실패한 굿즈를 재처리할 때</b> 씁니다.
+     *
+     * <p>업로드 바이트는 처리 후 메모리에서 사라지므로, 재시도하려면 실패 시 남겨둔 원본을
+     * 여기서 다시 가져와야 합니다.
+     *
+     * <p><b>느릴 수 있는 호출입니다.</b> S3 왕복이라 요청 스레드나 트랜잭션 안에서 부르지 마세요.
+     *
+     * @param imageUrl {@link #upload} 가 돌려줬던 URL
+     * @return 저장된 바이트
+     * @throws java.io.UncheckedIOException 읽지 못한 경우
+     */
+    byte[] download(String imageUrl);
 }

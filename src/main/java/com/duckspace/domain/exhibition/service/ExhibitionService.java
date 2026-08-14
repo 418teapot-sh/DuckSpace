@@ -35,6 +35,9 @@ public class ExhibitionService {
     private static final int MAX_LIMIT = 50;
     private static final int DEFAULT_LIMIT = 10;
 
+    /** 내 장식장은 한 화면에 다 보이는 편이 자연스러워서 기본값을 크게 잡습니다. */
+    private static final int MINE_DEFAULT_LIMIT = 20;
+
     private final ExhibitionRepository exhibitionRepository;
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionLikeRepository exhibitionLikeRepository;
@@ -75,6 +78,18 @@ public class ExhibitionService {
         exhibitionRepository.delete(exhibition);
 
         imageCleanup.deleteAfterCommit(imageUrls);
+    }
+
+    /**
+     * 내 장식장 목록. 마이페이지에서 씁니다. 최근에 만든 것부터입니다.
+     *
+     * <p>{@code likedByMe} 는 <b>내가 내 장식장에 좋아요를 눌렀는지</b>를 뜻합니다.
+     * 목록 카드가 인기·검색과 같은 응답을 쓰기 때문에 그대로 채워 보냅니다.
+     */
+    public List<ExhibitionSummaryResponse> getMine(Long userId, Integer limit) {
+        List<Long> ids = exhibitionRepository.findIdsByUserId(
+                userId, PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT)));
+        return toSummaries(ids, userId);
     }
 
     /** 홈 화면 "인기 전시장". 좋아요가 많은 순입니다. */

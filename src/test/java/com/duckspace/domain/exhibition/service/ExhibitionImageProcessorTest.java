@@ -236,4 +236,78 @@ class ExhibitionImageProcessorTest {
         verify(statusWriter).markFailed(eq(ITEM_ID), isNull());
         verify(imageStorage, never()).upload(anyString(), any(), anyString());
     }
+
+    // ------------------------------------------------------------------
+    // 재처리
+    // ------------------------------------------------------------------
+
+    private static final String SOURCE_URL = "https://cdn/origin.png";
+
+    private void handleRetry() {
+        processor.handleRetry(new ItemImageRetryRequestedEvent(ITEM_ID, EXHIBITION_ID, SOURCE_URL));
+    }
+
+    @Test
+    @DisplayName("재처리는 저장된 원본을 내려받아 다시 태운다")
+    void 재처리는_원본을_다시_태운다() {
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.download(SOURCE_URL)).willReturn(imageBytes);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/retried.png");
+
+        handleRetry();
+
+        verify(statusWriter).markReady(ITEM_ID, "https://cdn/retried.png");
+    }
+
+    @Test
+    @DisplayName("재처리에 성공하면 남겨뒀던 원본을 지운다")
+    void 재처리_성공하면_원본을_정리한다() {
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.download(SOURCE_URL)).willReturn(imageBytes);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/retried.png");
+
+        handleRetry();
+
+        // 처리본이 원본을 대체했으므로 남겨둘 이유가 없습니다.
+        verify(imageStorage).deleteByUrl(SOURCE_URL);
+    }
+
+    @Test
+    @DisplayName("원본을 못 읽으면 주소를 지우지 않고 FAILED 로 되돌린다")
+    void 원본을_못_읽어도_주소는_남긴다() {
+        given(imageStorage.download(SOURCE_URL)).willThrow(new RuntimeException("S3 down"));
+
+        handleRetry();
+
+        // null 로 덮으면 다시 시도할 방법이 사라집니다.
+        verify(statusWriter).markFailed(ITEM_ID, SOURCE_URL);
+        verify(imageStorage, never()).deleteByUrl(anyString());
+    }
+
+    @Test
+    @DisplayName("재처리가 실패해도 원본을 다시 저장하지 않고 기존 주소를 유지한다")
+    void 재처리_실패해도_주소는_유지된다() {
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.download(SOURCE_URL)).willReturn(imageBytes);
+        given(imageStorage.upload(anyString(), any(), anyString()))
+                .willThrow(new RuntimeException("S3 down"));
+
+        handleRetry();
+
+        // 이미 저장돼 있는 원본이 있으므로 또 올릴 필요가 없습니다.
+        verify(statusWriter).markFailed(ITEM_ID, SOURCE_URL);
+    }
+
+    @Test
+    @DisplayName("재처리가 큐에서 거절돼도 원본 주소를 잃지 않는다")
+    void 재처리_거절되어도_주소는_유지된다() {
+        directExecutor = task -> {
+            throw new RejectedExecutionException("queue full");
+        };
+
+        handleRetry();
+
+        // 여기서 null 을 넘기면 재시도 버튼을 누를수록 복구가 불가능해집니다.
+        verify(statusWriter).markFailed(ITEM_ID, SOURCE_URL);
+    }
 }

@@ -9,8 +9,11 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 
 /**
@@ -78,6 +81,20 @@ public class S3ImageStorage implements ImageStorage {
         } catch (Exception e) {
             // 객체가 남는 것보다 삭제 요청이 실패하는 쪽이 사용자에게 더 나쁩니다.
             log.warn("S3 이미지 삭제 실패: {} ({})", key, e.toString());
+        }
+    }
+
+    @Override
+    public byte[] download(String imageUrl) {
+        String key = keyFrom(imageUrl);
+        if (key == null) {
+            throw new UncheckedIOException(new IOException("이 버킷의 이미지가 아닙니다: " + imageUrl));
+        }
+        try {
+            return s3.getObjectAsBytes(
+                    GetObjectRequest.builder().bucket(bucket).key(key).build()).asByteArray();
+        } catch (Exception e) {
+            throw new UncheckedIOException(new IOException("S3 이미지를 읽지 못했습니다: " + key, e));
         }
     }
 

@@ -187,6 +187,31 @@ class ExhibitionRepositoryTest {
                 .containsExactly(a.getId());
     }
 
+    @Test
+    @DisplayName("내 장식장만, 최근에 만든 것부터 가져온다")
+    void 내_장식장_목록() {
+        Exhibition mineOld = exhibition(1L, "내 첫 장식장");
+        Exhibition othersOne = exhibition(2L, "남의 장식장");
+        Exhibition mineNew = exhibition(1L, "내 두번째 장식장");
+        entityManager.flush();
+
+        List<Long> ids = exhibitionRepository.findIdsByUserId(1L, PageRequest.of(0, 20));
+
+        assertThat(ids)
+                .as("최근에 만든 것이 먼저 나와야 합니다")
+                .containsExactly(mineNew.getId(), mineOld.getId());
+        assertThat(ids).doesNotContain(othersOne.getId());
+    }
+
+    @Test
+    @DisplayName("장식장이 하나도 없으면 빈 목록이다")
+    void 내_장식장이_없으면_빈_목록() {
+        exhibition(2L, "남의 장식장");
+        entityManager.flush();
+
+        assertThat(exhibitionRepository.findIdsByUserId(1L, PageRequest.of(0, 20))).isEmpty();
+    }
+
     /**
      * 비로그인 사용자를 위한 계약입니다.
      *

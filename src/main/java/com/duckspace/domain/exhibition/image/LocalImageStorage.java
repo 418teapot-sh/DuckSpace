@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -56,6 +57,19 @@ public class LocalImageStorage implements ImageStorage {
         } catch (IOException e) {
             // 파일이 남는 것보다 삭제 요청이 실패하는 쪽이 사용자에게 더 나쁩니다.
             log.warn("로컬 이미지 삭제 실패: {} ({})", key, e.toString());
+        }
+    }
+
+    @Override
+    public byte[] download(String imageUrl) {
+        String key = keyFrom(imageUrl);
+        if (key == null) {
+            throw new UncheckedIOException(new IOException("이 저장소의 이미지가 아닙니다: " + imageUrl));
+        }
+        try {
+            return Files.readAllBytes(resolve(key));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 

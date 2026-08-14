@@ -197,6 +197,43 @@ class ExhibitionServiceTest {
     }
 
     @Nested
+    @DisplayName("getMine 메서드는")
+    class Mine {
+
+        @Test
+        void 내_장식장을_카드_형태로_돌려준다() {
+            Exhibition e = exhibitionWithId(3L, OWNER, "내 장식장");
+
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of(itemOf(e, "thumb.png")));
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getMine(OWNER, null);
+
+            assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
+            assertThat(result.get(0).thumbnailUrl()).isEqualTo("thumb.png");
+        }
+
+        @Test
+        void limit을_주지_않으면_20개를_가져온다() {
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            exhibitionService.getMine(OWNER, null);
+
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(exhibitionRepository).findIdsByUserId(eq(OWNER), captor.capture());
+            assertThat(captor.getValue().getPageSize())
+                    .as("내 장식장은 한 화면에 다 보이는 편이 자연스럽습니다")
+                    .isEqualTo(20);
+        }
+    }
+
+    @Nested
     @DisplayName("getPopular 메서드는")
     class Popular {
 

@@ -57,6 +57,9 @@ public class ExhibitionImageProcessor {
     private static final String PNG = "png";
     private static final String PNG_CONTENT_TYPE = "image/png";
 
+    /** 재처리 때 remove.bg 에 보낼 파일명. 원본 파일명은 남겨두지 않습니다. */
+    private static final String RETRY_FILE_NAME = "retry.png";
+
     static {
         // 기본값(true)이면 ImageIO 가 읽고 쓸 때마다 임시파일을 거칩니다.
         // 이 파이프라인은 1024px 로 줄여 메모리 안에서 끝내도록 만든 것이라 디스크를 탈 이유가 없습니다.
@@ -85,18 +88,60 @@ public class ExhibitionImageProcessor {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(ItemImageUploadedEvent event) {
+        // 아직 저장해 둔 원본이 없으므로, 거절되면 남길 주소도 없습니다.
+        submit(event.itemId(), null, () -> process(event));
+    }
+
+    /**
+     * 실패한 굿즈 재처리. 원본을 <b>여기(백그라운드)에서</b> 내려받습니다.
+     *
+     * <p>요청 스레드에서 받으면 S3 왕복만큼 응답이 늦어지고, 그건 업로드에서 피하려던 것과
+     * 같은 문제입니다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleRetry(ItemImageRetryRequestedEvent event) {
+        String source = event.sourceImageUrl();
+        submit(event.itemId(), source, () -> {
+            byte[] data;
+            try {
+                data = imageStorage.download(source);
+            } catch (Exception e) {
+                log.warn("재처리할 원본을 읽지 못했습니다. itemId={}, 원인={}", event.itemId(), e.toString());
+                // 원본 주소는 그대로 둡니다. 지우면 다시 시도할 방법이 사라집니다.
+                statusWriter.markFailed(event.itemId(), source);
+                return;
+            }
+            process(new ItemImageUploadedEvent(
+                    event.itemId(), event.exhibitionId(), data, RETRY_FILE_NAME), source);
+        });
+    }
+
+    /**
+     * 실행기에 넣되 거절을 직접 처리합니다.
+     *
+     * @param fallbackUrl 거절됐을 때 아이템에 남겨둘 이미지 주소. 재처리면 원본 주소를 그대로
+     *                    돌려놔야 합니다 — {@code null} 로 덮으면 다시 시도할 방법이 사라집니다.
+     */
+    private void submit(Long itemId, String fallbackUrl, Runnable task) {
         try {
-            imageExecutor.execute(() -> process(event));
+            imageExecutor.execute(task);
         } catch (RejectedExecutionException e) {
             // 큐까지 가득 찼습니다. 요청 스레드에서 대신 처리하면 "즉시 응답" 약속이 깨지므로,
             // 실패로 정리하고 사용자가 다시 시도하게 합니다.
-            log.error("이미지 처리 큐가 가득 찼습니다. itemId={}", event.itemId(), e);
-            statusWriter.markFailed(event.itemId(), null);
+            log.error("이미지 처리 큐가 가득 찼습니다. itemId={}", itemId, e);
+            statusWriter.markFailed(itemId, fallbackUrl);
         }
     }
 
     /** 실제 처리. 테스트에서 실행기를 거치지 않고 바로 부를 수 있도록 열어둡니다. */
     void process(ItemImageUploadedEvent event) {
+        process(event, null);
+    }
+
+    /**
+     * @param existingSourceUrl 재처리라면 이미 저장돼 있는 원본 주소. 처음 업로드면 {@code null}.
+     */
+    private void process(ItemImageUploadedEvent event, String existingSourceUrl) {
         Long itemId = event.itemId();
         try {
             BufferedImage source = removeBackgroundOrOriginal(event.imageData(), event.fileName());
@@ -109,16 +154,36 @@ public class ExhibitionImageProcessor {
             statusWriter.markReady(itemId, url);
             log.info("이미지 처리 완료. itemId={}", itemId);
 
+            // 처리본이 원본을 대체했으므로 남겨뒀던 원본은 지웁니다. 상태를 먼저 바꾼 뒤에
+            // 지워야, 삭제가 실패해도 화면에는 정상 이미지가 보입니다.
+            deleteQuietly(existingSourceUrl);
+
         } catch (InterruptedException e) {
             // 인터럽트는 "실패" 가 아니라 "그만두라는 신호" 입니다. 삼키면 종료가 지연되고,
             // 상위 코드가 스레드 상태를 보고 판단할 방법이 사라집니다.
             Thread.currentThread().interrupt();
             log.warn("이미지 처리가 중단되었습니다. itemId={}", itemId);
-            statusWriter.markFailed(itemId, storeOriginalQuietly(event));
+            statusWriter.markFailed(itemId, sourceToKeep(event, existingSourceUrl));
 
         } catch (Exception e) {
             log.warn("이미지 처리 실패. itemId={}, 원인={}", itemId, e.toString());
-            statusWriter.markFailed(itemId, storeOriginalQuietly(event));
+            statusWriter.markFailed(itemId, sourceToKeep(event, existingSourceUrl));
+        }
+    }
+
+    /** 재처리였다면 이미 저장된 원본을 그대로 두고, 첫 업로드였다면 원본을 새로 저장합니다. */
+    private String sourceToKeep(ItemImageUploadedEvent event, String existingSourceUrl) {
+        return existingSourceUrl != null ? existingSourceUrl : storeOriginalQuietly(event);
+    }
+
+    private void deleteQuietly(String imageUrl) {
+        if (imageUrl == null) {
+            return;
+        }
+        try {
+            imageStorage.deleteByUrl(imageUrl);
+        } catch (Exception e) {
+            log.warn("재처리 후 원본 정리 실패: {} ({})", imageUrl, e.toString());
         }
     }
 

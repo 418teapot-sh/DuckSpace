@@ -100,6 +100,36 @@ public class ExhibitionItemService {
         return ExhibitionItemResponse.from(item);
     }
 
+    /**
+     * 실패한 굿즈를 다시 처리합니다. 사진을 다시 고르지 않아도 됩니다.
+     *
+     * <p>실패했을 때 원본을 저장소에 남겨두므로 그걸 다시 태웁니다. 다만 <b>원본조차 저장하지
+     * 못한 경우</b>(저장소 자체가 죽었거나 큐가 가득 차 접수 단계에서 실패한 경우)에는 남은 것이
+     * 없어서, 삭제 후 다시 올리는 수밖에 없습니다. 그 경우를 따로 알려줍니다.
+     *
+     * <p>다운로드와 재처리는 {@link ExhibitionImageProcessor} 가 커밋 이후 백그라운드에서 합니다.
+     */
+    @Transactional
+    public ExhibitionItemResponse retry(Long exhibitionId, Long itemId, Long userId) {
+        exhibitionService.getOwnedExhibition(exhibitionId, userId);
+        ExhibitionItem item = getItemOf(exhibitionId, itemId);
+
+        if (item.getStatus() != ItemStatus.FAILED) {
+            // 처리 중인 것을 또 넣으면 같은 아이템이 두 번 돌아갑니다.
+            throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_RETRYABLE);
+        }
+        String source = item.getImageUrl();
+        if (source == null || source.isBlank()) {
+            throw new BusinessException(ExhibitionErrorCode.RETRY_SOURCE_MISSING);
+        }
+
+        item.markPending();
+        eventPublisher.publishEvent(
+                new ItemImageRetryRequestedEvent(item.getId(), exhibitionId, source));
+
+        return ExhibitionItemResponse.from(item);
+    }
+
     /** 드래그 이동·크기 조절 결과를 저장합니다. */
     @Transactional
     public ExhibitionItemResponse updatePosition(Long exhibitionId, Long itemId, Long userId,

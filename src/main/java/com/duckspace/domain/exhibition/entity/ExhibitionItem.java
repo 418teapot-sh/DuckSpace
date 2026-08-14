@@ -123,6 +123,16 @@ public class ExhibitionItem extends BaseTimeEntity {
     public record Placement(Double posX, Double posY, Double width, Double height) {
     }
 
+    /**
+     * 다시 처리 대기 상태로 되돌립니다. 실패한 굿즈를 재시도할 때 씁니다.
+     *
+     * <p><b>{@code imageUrl} 은 일부러 그대로 둡니다.</b> 그 주소가 재처리할 원본이라
+     * 여기서 지우면 다시 시도할 방법이 사라지고, 처리되는 동안 화면에 보여줄 그림도 없어집니다.
+     */
+    public void markPending() {
+        this.status = ItemStatus.PENDING;
+    }
+
     /** 배경 제거·후처리가 끝나 화면에 표시할 수 있게 된 상태로 바꿉니다. */
     public void markReady(String imageUrl) {
         this.imageUrl = imageUrl;

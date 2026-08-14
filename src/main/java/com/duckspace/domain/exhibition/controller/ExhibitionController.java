@@ -62,6 +62,18 @@ public class ExhibitionController {
         return ApiResponse.success(exhibitionService.getPopular(limit, viewerId(authUser)));
     }
 
+    @Operation(summary = "내 장식장 목록",
+            description = """
+                    마이페이지용. 최근에 만든 것부터 돌려줍니다. limit 기본 20, 최대 50.
+                    응답 형태는 인기 전시장·검색과 같습니다.
+                    """)
+    @GetMapping("/me")
+    public ApiResponse<List<ExhibitionSummaryResponse>> myExhibitions(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(required = false) Integer limit) {
+        return ApiResponse.success(exhibitionService.getMine(authUser.getUserId(), limit));
+    }
+
     @Operation(summary = "장식장 상세",
             description = """
                     배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height 로 그리면 됩니다.
@@ -70,7 +82,9 @@ public class ExhibitionController {
                     **비로그인도 호출할 수 있습니다.** 이때 mine·likedByMe 는 false 이고
                     완료된 굿즈만 나옵니다.
                     """)
-    @GetMapping("/{exhibitionId}")
+    // id 를 숫자로 못박아 위의 /me 와 겹치지 않게 합니다. (Spring 이 리터럴을 먼저 고르긴 하지만,
+    //  나중에 /api/exhibitions/{다른 이름} 을 추가하는 사람이 헷갈리지 않도록 드러내 둡니다)
+    @GetMapping("/{exhibitionId:[0-9]+}")
     public ApiResponse<ExhibitionDetailResponse> detail(@AuthenticationPrincipal AuthUser authUser,
                                                          @PathVariable Long exhibitionId) {
         return ApiResponse.success(exhibitionService.getDetail(exhibitionId, viewerId(authUser)));
@@ -145,6 +159,22 @@ public class ExhibitionController {
                                                         @PathVariable Long itemId) {
         return ApiResponse.success(
                 exhibitionItemService.get(exhibitionId, itemId, authUser.getUserId()));
+    }
+
+    @Operation(summary = "실패한 굿즈 다시 처리",
+            description = """
+                    status 가 FAILED 인 굿즈를 다시 처리합니다. **사진을 다시 고를 필요가 없습니다.**
+                    실패할 때 남겨둔 원본을 서버가 다시 태웁니다.
+                    응답은 업로드와 같게 즉시 PENDING 으로 돌아오니, 단건 조회를 폴링하세요.
+                    FAILED 가 아니면 409, 남겨둔 원본이 없으면 409 RETRY_SOURCE_MISSING 입니다
+                    (이때는 삭제 후 다시 업로드해야 합니다).
+                    """)
+    @PostMapping("/{exhibitionId}/items/{itemId}/retry")
+    public ApiResponse<ExhibitionItemResponse> retryItem(@AuthenticationPrincipal AuthUser authUser,
+                                                          @PathVariable Long exhibitionId,
+                                                          @PathVariable Long itemId) {
+        return ApiResponse.success(
+                exhibitionItemService.retry(exhibitionId, itemId, authUser.getUserId()));
     }
 
     @Operation(summary = "굿즈 위치·크기 저장",
