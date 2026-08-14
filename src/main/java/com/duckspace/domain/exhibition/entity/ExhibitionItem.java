@@ -16,6 +16,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * 장식장에 배치된 굿즈.
@@ -84,10 +86,10 @@ public class ExhibitionItem extends BaseTimeEntity {
 
     // Hibernate 6+ 는 @Enumerated(STRING) 을 MySQL 네이티브 enum 컬럼으로 만듭니다.
     // ddl-auto: update 는 enum 정의를 바꾸지 않아서, 나중에 상수를 추가하면 저장이 실패합니다.
-    // varchar 로 고정해 그 문제를 피합니다. (@JdbcTypeCode(VARCHAR) 는 H2 에서 잘못된 check 제약을 만듭니다)
-    // 길이는 가장 긴 상수 이름을 담을 수 있어야 합니다. 상수를 추가할 때 확인하세요.
+    // varchar 로 매핑해 그 문제를 피합니다. (덕톡라운지 엔티티들도 같은 방식입니다)
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, columnDefinition = "varchar(20)")
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "status", nullable = false)
     private ItemStatus status;
 
     public ExhibitionItem(Exhibition exhibition, Placement placement, String imageUrl,
