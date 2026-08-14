@@ -52,11 +52,14 @@ public class ExhibitionController {
     }
 
     @Operation(summary = "인기 전시장",
-            description = "좋아요가 많은 순입니다. 홈 화면에서 사용합니다. limit 기본 10, 최대 50.")
+            description = """
+                    좋아요가 많은 순입니다. 홈 화면에서 사용합니다. limit 기본 10, 최대 50.
+                    **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
+                    """)
     @GetMapping("/popular")
     public ApiResponse<List<ExhibitionSummaryResponse>> popular(@AuthenticationPrincipal AuthUser authUser,
                                                                  @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.getPopular(limit, authUser.getUserId()));
+        return ApiResponse.success(exhibitionService.getPopular(limit, viewerId(authUser)));
     }
 
     @Operation(summary = "장식장 상세",
@@ -64,11 +67,25 @@ public class ExhibitionController {
                     배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height 로 그리면 됩니다.
                     좌표와 크기는 배경 대비 비율(0.0~1.0)입니다.
                     본인 장식장이면 처리 중(PENDING)·실패(FAILED)한 굿즈도 함께 나옵니다.
+                    **비로그인도 호출할 수 있습니다.** 이때 mine·likedByMe 는 false 이고
+                    완료된 굿즈만 나옵니다.
                     """)
     @GetMapping("/{exhibitionId}")
     public ApiResponse<ExhibitionDetailResponse> detail(@AuthenticationPrincipal AuthUser authUser,
                                                          @PathVariable Long exhibitionId) {
-        return ApiResponse.success(exhibitionService.getDetail(exhibitionId, authUser.getUserId()));
+        return ApiResponse.success(exhibitionService.getDetail(exhibitionId, viewerId(authUser)));
+    }
+
+    /**
+     * 로그인한 사용자면 id 를, 아니면 {@code null} 을 돌려줍니다.
+     *
+     * <p><b>공개 엔드포인트에서는 {@code authUser} 가 null 입니다.</b> 비로그인 요청에도
+     * 인증 객체 자체는 채워지지만 principal 이 {@code "anonymousUser"} 라는 String 이라
+     * {@code AuthUser} 로 캐스팅되지 못하고 null 이 들어옵니다.
+     * 서비스단은 {@code viewerId == null} 을 "남의 장식장을 보는 사람" 으로 처리합니다.
+     */
+    private static Long viewerId(AuthUser authUser) {
+        return authUser == null ? null : authUser.getUserId();
     }
 
     @Operation(summary = "장식장 이름 수정", description = "본인 장식장만 수정할 수 있습니다.")
