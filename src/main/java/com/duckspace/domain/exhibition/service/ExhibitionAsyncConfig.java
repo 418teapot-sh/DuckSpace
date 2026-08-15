@@ -31,6 +31,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class ExhibitionAsyncConfig {
 
     public static final String IMAGE_EXECUTOR = "exhibitionImageExecutor";
+    public static final String CLEANUP_EXECUTOR = "exhibitionCleanupExecutor";
 
     /** 위 주석의 계산 근거. 업로드 상한(10MB)을 바꾸면 여기도 같이 봐야 합니다. */
     private static final int QUEUE_CAPACITY = 20;
@@ -53,6 +54,33 @@ public class ExhibitionAsyncConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(60);
 
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 삭제된 이미지를 치우는 전용 실행기.
+     *
+     * <p><b>이미지 처리와 나눠 놓은 이유:</b> 장식장 하나를 지우면 안에 있던 굿즈 수만큼 S3 왕복이
+     * 생깁니다. 그걸 위 실행기에 넣으면 스레드 둘 중 하나가 삭제만 하느라 오래 묶여서,
+     * 그동안 올라온 사진들이 처리되지 못하고 큐에 밀립니다. 정리 작업 때문에 사용자가 방금 올린
+     * 사진이 늦어지는 건 우선순위가 거꾸로입니다.
+     *
+     * <p>대기 작업이 URL 문자열만 들고 있어 메모리 걱정이 없으므로, 이쪽 큐는 넉넉히 잡습니다.
+     * (이미지 실행기는 원본 바이트를 들고 있어서 큐를 짧게 잡아야 합니다)
+     */
+    @Bean(CLEANUP_EXECUTOR)
+    public Executor exhibitionCleanupExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("exhibition-cleanup-");
+        // 넘치면 호출부가 그 자리에서 지웁니다. (ImageCleanup 이 처리)
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        // 정리가 끝나기 전에 프로세스가 내려가면 객체가 그대로 남습니다.
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
         executor.initialize();
         return executor;
     }

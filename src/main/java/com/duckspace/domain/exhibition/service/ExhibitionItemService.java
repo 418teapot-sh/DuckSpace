@@ -115,10 +115,15 @@ public class ExhibitionItemService {
     @Transactional
     public ExhibitionItemResponse retry(Long exhibitionId, Long itemId, Long userId) {
         exhibitionService.getOwnedExhibition(exhibitionId, userId);
-        ExhibitionItem item = getItemOf(exhibitionId, itemId);
+
+        // 행을 잠그고 읽습니다. 잠그지 않으면 빠르게 두 번 누른 요청이 둘 다 FAILED 를 보고
+        // 통과해서, 같은 사진이 두 번 처리되고 remove.bg 크레딧도 두 번 나갑니다.
+        ExhibitionItem item = exhibitionItemRepository.findByIdForUpdate(itemId)
+                .filter(found -> found.belongsTo(exhibitionId))
+                .orElseThrow(() -> new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND));
 
         if (item.getStatus() != ItemStatus.FAILED) {
-            // 처리 중인 것을 또 넣으면 같은 아이템이 두 번 돌아갑니다.
+            // 뒤에 온 요청은 앞 요청이 PENDING 으로 바꿔둔 것을 보고 여기서 물러납니다.
             throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_RETRYABLE);
         }
         String source = item.getImageUrl();

@@ -24,18 +24,22 @@ import java.util.concurrent.RejectedExecutionException;
  * <p><b>백그라운드로 넘기는 이유:</b> 장식장을 지우면 안에 있던 굿즈 수만큼 S3 왕복이 생깁니다.
  * 그걸 요청 스레드에서 하나씩 하면 굿즈가 많을수록 삭제 응답이 느려집니다. 사용자 입장에서
  * 삭제는 이미 끝난 일이라 기다릴 이유가 없습니다.
+ *
+ * <p><b>이미지 처리와 다른 실행기를 쓰는 이유:</b> 같이 쓰면 굿즈를 많이 지운 사용자 하나가
+ * 스레드를 오래 붙잡아, 그 사이 다른 사용자가 올린 사진 처리가 밀립니다.
+ * ({@code ExhibitionAsyncConfig.CLEANUP_EXECUTOR})
  */
 @Slf4j
 @Component
 public class ImageCleanup {
 
     private final ImageStorage imageStorage;
-    private final Executor imageExecutor;
+    private final Executor cleanupExecutor;
 
     public ImageCleanup(ImageStorage imageStorage,
-                        @Qualifier("exhibitionImageExecutor") Executor imageExecutor) {
+                        @Qualifier("exhibitionCleanupExecutor") Executor cleanupExecutor) {
         this.imageStorage = imageStorage;
-        this.imageExecutor = imageExecutor;
+        this.cleanupExecutor = cleanupExecutor;
     }
 
     /** 한 장짜리 편의 메서드. {@code null} 이면 아무것도 하지 않습니다. */
@@ -79,7 +83,7 @@ public class ImageCleanup {
 
     private void submit(List<String> imageUrls) {
         try {
-            imageExecutor.execute(() -> imageUrls.forEach(this::deleteQuietly));
+            cleanupExecutor.execute(() -> imageUrls.forEach(this::deleteQuietly));
         } catch (RejectedExecutionException e) {
             // 큐가 가득 찼습니다. 정리를 통째로 건너뛰면 객체가 영영 남으므로,
             // 느려지더라도 이 자리에서 지웁니다.

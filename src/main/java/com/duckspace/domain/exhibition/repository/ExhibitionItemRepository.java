@@ -2,13 +2,16 @@ package com.duckspace.domain.exhibition.repository;
 
 import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, Long> {
 
@@ -28,6 +31,20 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
     /** 그리드 더보기. 커서보다 오래된 것만. */
     List<ExhibitionItem> findByExhibitionIdAndStatusInAndIdLessThanOrderByIdDesc(
             Long exhibitionId, Collection<ItemStatus> statuses, Long cursor, Pageable pageable);
+
+    /**
+     * 재처리 접수용. <b>행을 잠그고</b> 읽습니다.
+     *
+     * <p>재시도 버튼을 빠르게 두 번 누르면 두 요청이 모두 {@code FAILED} 를 읽고 통과해서,
+     * 같은 사진이 두 번 처리됩니다. remove.bg 무료 크레딧(월 50회)이 두 번 나가고,
+     * 늦게 끝난 쪽이 먼저 끝난 쪽의 결과를 덮을 수도 있습니다.
+     *
+     * <p>잠그면 뒤에 온 요청이 앞 트랜잭션의 커밋을 기다렸다가 {@code PENDING} 을 보고
+     * 스스로 물러납니다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from ExhibitionItem i where i.id = :itemId")
+    Optional<ExhibitionItem> findByIdForUpdate(@Param("itemId") Long itemId);
 
     void deleteByExhibitionId(Long exhibitionId);
 

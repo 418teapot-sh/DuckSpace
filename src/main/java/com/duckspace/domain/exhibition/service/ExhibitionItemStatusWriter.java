@@ -1,6 +1,7 @@
 package com.duckspace.domain.exhibition.service;
 
 import com.duckspace.domain.exhibition.entity.ExhibitionItem;
+import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,20 +36,35 @@ class ExhibitionItemStatusWriter {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markReady(Long itemId, String imageUrl) {
-        find(itemId).ifPresent(item -> item.markReady(imageUrl));
+        pending(itemId).ifPresent(item -> item.markReady(imageUrl));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(Long itemId, String originalImageUrl) {
-        find(itemId).ifPresent(item -> item.markFailed(originalImageUrl));
+        pending(itemId).ifPresent(item -> item.markFailed(originalImageUrl));
     }
 
-    /** 처리 중에 사용자가 삭제했을 수 있습니다. 실패가 아니라 정상 흐름이라 조용히 넘어갑니다. */
-    private Optional<ExhibitionItem> find(Long itemId) {
-        Optional<ExhibitionItem> item = exhibitionItemRepository.findById(itemId);
-        if (item.isEmpty()) {
+    /**
+     * 아직 {@code PENDING} 인 아이템만 돌려줍니다. <b>결과를 쓸 자격이 있는지</b>를 확인하는 것입니다.
+     *
+     * <p>같은 아이템에 대한 처리가 둘 이상 떠 있을 수 있습니다(빠른 재시도 등). 그때 늦게 끝난
+     * 쪽이 먼저 끝난 쪽의 결과를 덮으면, 이미 {@code READY} 인 굿즈가 <b>이미 지워진 원본을
+     * 가리키는 {@code FAILED}</b> 로 되돌아갑니다. 상태가 이미 바뀌었다면 그 결과는 버립니다.
+     *
+     * <p>처리 중에 사용자가 삭제한 경우도 여기서 같이 걸러집니다.
+     */
+    private Optional<ExhibitionItem> pending(Long itemId) {
+        Optional<ExhibitionItem> found = exhibitionItemRepository.findById(itemId);
+        if (found.isEmpty()) {
             log.info("상태를 기록할 아이템이 이미 없습니다. itemId={}", itemId);
+            return Optional.empty();
         }
-        return item;
+        ExhibitionItem item = found.get();
+        if (item.getStatus() != ItemStatus.PENDING) {
+            log.info("이미 처리가 끝난 아이템이라 결과를 버립니다. itemId={}, status={}",
+                    itemId, item.getStatus());
+            return Optional.empty();
+        }
+        return found;
     }
 }

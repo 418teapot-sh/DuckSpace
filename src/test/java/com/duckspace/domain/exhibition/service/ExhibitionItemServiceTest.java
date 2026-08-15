@@ -430,7 +430,7 @@ class ExhibitionItemServiceTest {
         @Test
         void 원본을_다시_태우도록_이벤트를_발행한다() {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findById(5L))
+            given(exhibitionItemRepository.findByIdForUpdate(5L))
                     .willReturn(Optional.of(failedItem("https://cdn/origin.png")));
 
             ExhibitionItemResponse response = exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
@@ -450,7 +450,7 @@ class ExhibitionItemServiceTest {
         void 원본_주소를_지우지_않는다() {
             ExhibitionItem target = failedItem("https://cdn/origin.png");
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(target));
 
             exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
 
@@ -461,7 +461,7 @@ class ExhibitionItemServiceTest {
         @Test
         void 실패한_굿즈가_아니면_거부한다() {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(item(5L)));   // READY
+            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(item(5L)));   // READY
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
@@ -475,7 +475,7 @@ class ExhibitionItemServiceTest {
         void 남겨둔_원본이_없으면_다시_올리라고_알려준다() {
             // 큐가 가득 차 접수 단계에서 실패한 경우 imageUrl 이 비어 있습니다.
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(failedItem(null)));
+            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(failedItem(null)));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
