@@ -27,4 +27,16 @@ class FollowWriter {
     public void insert(User follower, User following) {
         followRepository.saveAndFlush(Follow.of(follower, following));
     }
+
+    /**
+     * {@code insert}가 유니크 제약 위반으로 실패했을 때, 그게 진짜 중복인지 재확인하는 용도입니다.
+     *
+     * <p>바깥쪽 트랜잭션에서 그대로 재조회하면 MySQL REPEATABLE READ의 스냅샷 때문에, 그 트랜잭션의
+     * 최초 조회 시점 이후 다른 트랜잭션이 커밋한 row가 안 보일 수 있습니다. {@code REQUIRES_NEW}로
+     * 새 트랜잭션을 열어야 방금 커밋된 최신 상태를 볼 수 있습니다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public boolean existsByFollowerAndFollowing(Long followerId, Long followingId) {
+        return followRepository.existsByFollowerIdAndFollowingId(followerId, followingId);
+    }
 }

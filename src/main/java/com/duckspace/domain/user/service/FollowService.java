@@ -50,7 +50,11 @@ public class FollowService {
         } catch (DataIntegrityViolationException e) {
             // 유니크 제약 위반(동시에 두 번 눌림)이면 이미 팔로우된 상태이므로 성공으로 봅니다.
             // FK 제약 위반(getUser()와 insert() 사이에 상대 계정이 삭제됨)이면 기록되지 않았으므로 예외를 던집니다.
-            if (!followRepository.existsByFollowerIdAndFollowingId(followerId, followingId)) {
+            //
+            // 재확인은 followWriter를 통해 별도 트랜잭션(REQUIRES_NEW)에서 합니다. 이 메서드(follow) 자체가
+            // 이미 트랜잭션 안이라 followRepository로 바로 재조회하면 MySQL REPEATABLE READ 스냅샷 때문에
+            // 방금 다른 트랜잭션이 커밋한 row를 못 볼 수 있습니다.
+            if (!followWriter.existsByFollowerAndFollowing(followerId, followingId)) {
                 throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
             }
         }
