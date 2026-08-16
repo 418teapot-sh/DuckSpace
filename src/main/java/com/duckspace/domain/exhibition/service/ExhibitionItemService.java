@@ -23,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -34,6 +36,9 @@ public class ExhibitionItemService {
 
     private static final int MAX_PAGE_SIZE = 50;
     private static final int DEFAULT_PAGE_SIZE = 20;
+
+    /** 이보다 오래 PENDING 인 아이템은 처리가 끊긴 것으로 보고 재시도를 허용합니다. */
+    private static final Duration ABANDONED_PENDING_THRESHOLD = Duration.ofMinutes(15);
 
     /** 브라우저가 보내는 이미지 MIME 타입. ImageIO 가 읽을 수 있는 형식으로 제한합니다. */
     private static final Set<String> SUPPORTED_TYPES = Set.of("image/jpeg", "image/jpg", "image/png");
@@ -122,7 +127,7 @@ public class ExhibitionItemService {
                 .filter(found -> found.belongsTo(exhibitionId))
                 .orElseThrow(() -> new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND));
 
-        if (item.getStatus() != ItemStatus.FAILED) {
+        if (item.getStatus() != ItemStatus.FAILED && !isAbandonedPending(item)) {
             // 뒤에 온 요청은 앞 요청이 PENDING 으로 바꿔둔 것을 보고 여기서 물러납니다.
             throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_RETRYABLE);
         }
@@ -136,6 +141,24 @@ public class ExhibitionItemService {
                 new ItemImageRetryRequestedEvent(item.getId(), exhibitionId, source));
 
         return ExhibitionItemResponse.from(item);
+    }
+
+    /**
+     * 강제 종료(OOM 등)로 처리가 끊긴 채 방치된 {@code PENDING} 인지.
+     *
+     * <p>정상 종료는 처리 완료를 기다리지만 프로세스가 그냥 죽으면 {@code PENDING} 이
+     * 영원히 남는데, 재시도가 {@code FAILED} 만 받으면 사용자가 복구할 방법이 없습니다.
+     * 그래서 <b>오래 방치된 PENDING 은 실패한 것으로 간주</b>하고 재시도를 허용합니다.
+     *
+     * <p>기준을 넉넉히 잡은 이유: 처리 큐가 꽉 찼을 때 최악 대기가 10분을 넘을 수 있습니다
+     * (큐 20 x remove.bg 타임아웃 60초 / 스레드 2). 아직 살아있는 작업과 겹치더라도,
+     * 결과 기록은 PENDING 가드가 선착순으로 지키고 늦은 쪽의 업로드는 회수되므로
+     * 낭비일 뿐 데이터가 깨지지는 않습니다.
+     */
+    private static boolean isAbandonedPending(ExhibitionItem item) {
+        return item.getStatus() == ItemStatus.PENDING
+                && item.getUpdatedAt() != null
+                && item.getUpdatedAt().isBefore(LocalDateTime.now().minus(ABANDONED_PENDING_THRESHOLD));
     }
 
     /** 드래그 이동·크기 조절 결과를 저장합니다. */

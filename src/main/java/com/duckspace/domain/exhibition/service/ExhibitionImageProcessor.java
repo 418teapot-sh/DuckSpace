@@ -135,13 +135,21 @@ public class ExhibitionImageProcessor {
             String url = imageStorage.upload(
                     keyFor(event.exhibitionId(), "." + PNG), toBytes(processed), PNG_CONTENT_TYPE);
 
+            boolean written;
             try {
-                statusWriter.markReady(itemId, url);
+                written = statusWriter.markReady(itemId, url);
             } catch (Exception e) {
-                // 방금 올린 처리본을 아무도 가리키지 않게 됐습니다. 여기서 회수하지 않으면
-                // DB 어디에도 주소가 없는 고아 객체로 영원히 남습니다.
+                // 기록에 실패해 방금 올린 처리본을 아무도 가리키지 않게 됐습니다.
+                // 여기서 회수하지 않으면 DB 어디에도 주소가 없는 고아 객체로 영원히 남습니다.
                 imageCleanup.delete(url);
                 throw e;
+            }
+            if (!written) {
+                // 예외가 아니라 조용한 no-op(처리 중 삭제됨 · 이미 처리 끝남)도 같은 상황입니다.
+                // 이때 기존 원본(existingSourceUrl)은 지우지 않습니다 — no-op 의 이유를 모르는 채로
+                // 지우면, 이미 FAILED 로 끝난 아이템이 가리키는 원본을 끊어버릴 수 있습니다.
+                imageCleanup.delete(url);
+                return;
             }
             log.info("이미지 처리 완료. itemId={}", itemId);
 
@@ -154,17 +162,35 @@ public class ExhibitionImageProcessor {
             // 상위 코드가 스레드 상태를 보고 판단할 방법이 사라집니다.
             Thread.currentThread().interrupt();
             log.warn("이미지 처리가 중단되었습니다. itemId={}", itemId);
-            statusWriter.markFailed(itemId, sourceToKeep(event, existingSourceUrl));
+            failKeepingSource(event, itemId, existingSourceUrl);
 
         } catch (Exception e) {
             log.warn("이미지 처리 실패. itemId={}, 원인={}", itemId, e.toString());
-            statusWriter.markFailed(itemId, sourceToKeep(event, existingSourceUrl));
+            failKeepingSource(event, itemId, existingSourceUrl);
         }
     }
 
-    /** 재처리였다면 이미 저장된 원본을 그대로 두고, 첫 업로드였다면 원본을 새로 저장합니다. */
-    private String sourceToKeep(ItemImageUploadedEvent event, String existingSourceUrl) {
-        return existingSourceUrl != null ? existingSourceUrl : storeOriginalQuietly(event);
+    /**
+     * 실패로 기록하되 원본을 지키는 공통 뒷정리.
+     *
+     * <p>재처리였다면 이미 저장된 원본을 그대로 쓰고, 첫 업로드였다면 원본을 새로 저장합니다.
+     * <b>기록이 no-op 으로 끝났고 원본을 방금 새로 올린 경우</b>에만 그 사본을 회수합니다 —
+     * 기존 원본은 다른 상태(FAILED)가 가리키고 있을 수 있어 건드리지 않습니다.
+     */
+    private void failKeepingSource(ItemImageUploadedEvent event, Long itemId, String existingSourceUrl) {
+        boolean freshlyStored = (existingSourceUrl == null);
+        String keep = freshlyStored ? storeOriginalQuietly(event) : existingSourceUrl;
+
+        boolean written;
+        try {
+            written = statusWriter.markFailed(itemId, keep);
+        } catch (Exception e) {
+            log.warn("실패 기록도 실패했습니다. itemId={}", itemId, e);
+            written = false;
+        }
+        if (!written && freshlyStored && keep != null) {
+            imageCleanup.delete(keep);
+        }
     }
 
     /**

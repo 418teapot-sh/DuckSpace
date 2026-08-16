@@ -58,6 +58,9 @@ class ExhibitionImageProcessorTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        // 기록은 기본적으로 성공하는 것으로 둡니다. no-op 시나리오는 각 테스트에서 덮어씁니다.
+        org.mockito.Mockito.lenient().when(statusWriter.markReady(anyLong(), anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(statusWriter.markFailed(anyLong(), any())).thenReturn(true);
         imageBytes = pngBytes(200, 200);
         processor = new ExhibitionImageProcessor(
                 removeBgClient, imageStorage, imageCleanup, statusWriter,
@@ -257,6 +260,43 @@ class ExhibitionImageProcessorTest {
         verify(imageCleanup).delete("https://cdn/result.png");
     }
 
+    @Test
+    @DisplayName("기록이 조용히 무시되면(no-op) 방금 올린 처리본을 회수한다")
+    void 기록이_노업이면_처리본을_회수한다() {
+        // 처리 중에 사용자가 굿즈를 삭제하면 markReady 가 예외 없이 false 를 돌려줍니다.
+        // 예외만 잡아서는 이 경우를 놓쳐서 처리본이 고아로 남았습니다.
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/result.png");
+        given(statusWriter.markReady(anyLong(), anyString())).willReturn(false);
+
+        handle();
+
+        verify(imageCleanup).delete("https://cdn/result.png");
+    }
+
+    @Test
+    @DisplayName("실패 기록이 무시되면 방금 저장한 원본 사본만 회수한다")
+    void 실패_기록이_노업이면_새_원본만_회수한다() {
+        // 첫 업로드 실패 경로: 처리본 업로드 실패 -> 원본 사본 저장 -> markFailed 가 no-op.
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.upload(anyString(), any(), eq("image/png")))
+                .willThrow(new RuntimeException("S3 down"));
+        given(imageStorage.upload(anyString(), any(), eq("image/jpeg"))).willReturn("https://cdn/copy.jpeg");
+        given(statusWriter.markFailed(anyLong(), any())).willReturn(false);
+
+        try {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB), "jpeg", out);
+            imageBytes = out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        handle();
+
+        verify(imageCleanup).delete("https://cdn/copy.jpeg");
+    }
+
     // ------------------------------------------------------------------
     // 재처리
     // ------------------------------------------------------------------
@@ -316,6 +356,22 @@ class ExhibitionImageProcessorTest {
 
         // 이미 저장돼 있는 원본이 있으므로 또 올릴 필요가 없습니다.
         verify(statusWriter).markFailed(ITEM_ID, SOURCE_URL);
+    }
+
+    @Test
+    @DisplayName("재처리 기록이 무시돼도 기존 원본은 건드리지 않는다")
+    void 재처리_노업이어도_기존_원본은_보존한다() {
+        // no-op 의 이유를 모르는 채로 기존 원본을 지우면, 이미 FAILED 로 끝난
+        // 아이템이 가리키는 원본을 끊어버릴 수 있습니다. 처리본만 회수해야 합니다.
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.download(SOURCE_URL)).willReturn(imageBytes);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/retried.png");
+        given(statusWriter.markReady(anyLong(), anyString())).willReturn(false);
+
+        handleRetry();
+
+        verify(imageCleanup).delete("https://cdn/retried.png");
+        verify(imageCleanup, never()).delete(SOURCE_URL);
     }
 
     @Test

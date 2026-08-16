@@ -34,14 +34,26 @@ class ExhibitionItemStatusWriter {
 
     private final ExhibitionItemRepository exhibitionItemRepository;
 
+    /**
+     * @return 실제로 기록했으면 {@code true}. <b>{@code false} 는 아이템이 사라졌거나 이미
+     *         처리가 끝났다는 뜻</b>이라, 호출부는 방금 올린 이미지를 아무도 가리키지 않게 된
+     *         것이므로 회수해야 합니다. (예외만 잡아서는 이 경우를 놓칩니다)
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markReady(Long itemId, String imageUrl) {
-        pending(itemId).ifPresent(item -> item.markReady(imageUrl));
+    public boolean markReady(Long itemId, String imageUrl) {
+        return pending(itemId).map(item -> {
+            item.markReady(imageUrl);
+            return true;
+        }).orElse(false);
     }
 
+    /** 반환값 의미는 {@link #markReady} 와 같습니다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markFailed(Long itemId, String originalImageUrl) {
-        pending(itemId).ifPresent(item -> item.markFailed(originalImageUrl));
+    public boolean markFailed(Long itemId, String originalImageUrl) {
+        return pending(itemId).map(item -> {
+            item.markFailed(originalImageUrl);
+            return true;
+        }).orElse(false);
     }
 
     /**
