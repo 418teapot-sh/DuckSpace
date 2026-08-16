@@ -42,7 +42,7 @@ public class User extends BaseTimeEntity {
     @Column(name = "auth_provider", nullable = false)
     private AuthProvider authProvider;
 
-    @Column(name = "profile_image_url")
+    @Column(name = "profile_image_url", length = 500)
     private String profileImageUrl;
 
     @Builder
@@ -53,9 +53,12 @@ public class User extends BaseTimeEntity {
         this.authProvider = authProvider;
     }
 
+    /** {@code profileImageUrl}이 null이면 기존 값을 유지합니다(부분 수정). */
     public User updateProfile(String nickname, String profileImageUrl) {
         this.nickname = nickname;
-        this.profileImageUrl = profileImageUrl;
+        if (profileImageUrl != null) {
+            this.profileImageUrl = profileImageUrl;
+        }
         return this;
     }
 

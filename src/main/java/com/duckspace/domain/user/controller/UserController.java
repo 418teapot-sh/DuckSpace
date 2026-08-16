@@ -26,7 +26,7 @@ public class UserController {
     private final UserService userService;
 
     @Operation(summary = "유저 프로필 조회", description = "팔로워/팔로잉 수를 포함합니다.")
-    @GetMapping("/{userId}")
+    @GetMapping("/{userId:[0-9]+}")
     public ApiResponse<UserProfileResponse> getProfile(@PathVariable Long userId) {
         return ApiResponse.success(userService.getProfile(userId));
     }

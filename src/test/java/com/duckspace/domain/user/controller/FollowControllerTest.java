@@ -63,14 +63,13 @@ class FollowControllerTest {
     }
 
     @Test
-    void follow_이미_팔로우했으면_409() throws Exception {
-        willThrow(new BusinessException(UserErrorCode.ALREADY_FOLLOWING))
-                .given(followService).follow(eq(1L), eq(2L));
-
+    void follow_이미_팔로우했어도_성공한다() throws Exception {
         mockMvc.perform(post("/api/users/2/follow")
                         .with(user(new AuthUser(1L))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("ALREADY_FOLLOWING"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(followService).follow(1L, 2L);
     }
 
     @Test

@@ -1,7 +1,6 @@
 package com.duckspace.domain.user.service;
 
 import com.duckspace.domain.user.dto.response.FollowUserResponse;
-import com.duckspace.domain.user.entity.Follow;
 import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.exception.UserErrorCode;
 import com.duckspace.domain.user.repository.FollowRepository;
@@ -26,30 +25,36 @@ public class FollowService {
 
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
+    private final FollowWriter followWriter;
 
+    /**
+     * 팔로우. 이미 팔로우한 상태여도, 동시에 두 번 눌려도 결과가 같습니다(멱등).
+     *
+     * <p>INSERT는 {@link FollowWriter}가 별도 트랜잭션에서 수행합니다.
+     * 같은 트랜잭션에서 유니크 제약 위반을 잡고 넘어가면 rollback-only 상태로 남아
+     * 커밋 시점에 {@code UnexpectedRollbackException}이 날 수 있기 때문입니다.
+     */
     @Transactional
     public void follow(Long followerId, Long followingId) {
         if (followerId.equals(followingId)) {
             throw new BusinessException(UserErrorCode.SELF_FOLLOW_NOT_ALLOWED);
         }
         if (followRepository.existsByFollowerIdAndFollowingId(followerId, followingId)) {
-            throw new BusinessException(UserErrorCode.ALREADY_FOLLOWING);
+            return;
         }
 
         User follower = getUser(followerId);
         User following = getUser(followingId);
         try {
-            followRepository.saveAndFlush(Follow.of(follower,following));
+            followWriter.insert(follower, following);
         } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(UserErrorCode.ALREADY_FOLLOWING);
+            // 동시에 두 번 눌렸습니다. 이미 팔로우된 상태이므로 성공으로 봅니다.
         }
     }
 
+    /** 언팔로우. 팔로우한 적이 없어도 성공으로 처리합니다(멱등). */
     @Transactional
     public void unfollow(Long followerId, Long followingId) {
-        if (!followRepository.existsByFollowerIdAndFollowingId(followerId, followingId)) {
-            throw new BusinessException(UserErrorCode.NOT_FOLLOWING);
-        }
         followRepository.deleteByFollowerIdAndFollowingId(followerId, followingId);
     }
 

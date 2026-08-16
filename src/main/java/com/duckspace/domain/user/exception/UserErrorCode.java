@@ -10,8 +10,6 @@ public enum UserErrorCode implements BaseErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
 
     SELF_FOLLOW_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "자기 자신은 팔로우할 수 없습니다."),
-    ALREADY_FOLLOWING(HttpStatus.CONFLICT, "이미 팔로우한 사용자입니다."),
-    NOT_FOLLOWING(HttpStatus.NOT_FOUND, "팔로우하고 있지 않습니다."),
     ;
 
     private final HttpStatus status;

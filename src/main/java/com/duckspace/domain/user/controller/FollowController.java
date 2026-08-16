@@ -24,14 +24,14 @@ public class FollowController {
 
     private final FollowService followService;
 
-    @Operation(summary = "팔로우")
+    @Operation(summary = "팔로우", description = "여러 번 호출해도 결과가 같습니다.")
     @PostMapping("/api/users/{userId}/follow")
     public ApiResponse<Void> follow(@AuthenticationPrincipal AuthUser authUser, @PathVariable Long userId) {
         followService.follow(authUser.getUserId(), userId);
         return ApiResponse.noContent();
     }
 
-    @Operation(summary = "언팔로우")
+    @Operation(summary = "언팔로우", description = "팔로우한 적이 없어도 성공합니다.")
     @DeleteMapping("/api/users/{userId}/follow")
     public ApiResponse<Void> unfollow(@AuthenticationPrincipal AuthUser authUser, @PathVariable Long userId) {
         followService.unfollow(authUser.getUserId(), userId);

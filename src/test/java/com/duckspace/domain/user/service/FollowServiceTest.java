@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -33,12 +34,14 @@ class FollowServiceTest {
     private FollowRepository followRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private FollowWriter followWriter;
 
     private FollowService followService;
 
     @BeforeEach
     void setUp() {
-        followService = new FollowService(followRepository, userRepository);
+        followService = new FollowService(followRepository, userRepository, followWriter);
     }
 
     private User user(Long id) {
@@ -62,20 +65,19 @@ class FollowServiceTest {
 
             followService.follow(1L, 2L);
 
-            verify(followRepository).saveAndFlush(any());
+            verify(followWriter).insert(any(), any());
         }
 
         @Test
-        void 동시_요청으로_DB_유니크_제약조건이_위반되면_ALREADY_FOLLOWING_예외로_변환한다() {
+        void 동시_요청으로_DB_유니크_제약조건이_위반되면_성공으로_처리한다() {
             given(userRepository.findById(1L)).willReturn(Optional.of(user(1L)));
             given(userRepository.findById(2L)).willReturn(Optional.of(user(2L)));
             given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(false);
-            given(followRepository.saveAndFlush(any())).willThrow(new DataIntegrityViolationException("duplicate"));
+            doThrow(new DataIntegrityViolationException("duplicate")).when(followWriter).insert(any(), any());
 
-            BusinessException exception = assertThrows(BusinessException.class,
-                    () -> followService.follow(1L, 2L));
+            followService.follow(1L, 2L);
 
-            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.ALREADY_FOLLOWING);
+            verify(followWriter).insert(any(), any());
         }
 
         @Test
@@ -84,18 +86,16 @@ class FollowServiceTest {
                     () -> followService.follow(1L, 1L));
 
             assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.SELF_FOLLOW_NOT_ALLOWED);
-            verify(followRepository, never()).save(any());
+            verify(followWriter, never()).insert(any(), any());
         }
 
         @Test
-        void 이미_팔로우한_상대면_예외() {
+        void 이미_팔로우한_상대면_아무_일도_하지_않는다() {
             given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(true);
 
-            BusinessException exception = assertThrows(BusinessException.class,
-                    () -> followService.follow(1L, 2L));
+            followService.follow(1L, 2L);
 
-            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.ALREADY_FOLLOWING);
-            verify(followRepository, never()).save(any());
+            verify(followWriter, never()).insert(any(), any());
         }
 
         @Test
@@ -107,7 +107,7 @@ class FollowServiceTest {
                     () -> followService.follow(1L, 2L));
 
             assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.USER_NOT_FOUND);
-            verify(followRepository, never()).save(any());
+            verify(followWriter, never()).insert(any(), any());
         }
     }
 
@@ -116,23 +116,10 @@ class FollowServiceTest {
     class Unfollow {
 
         @Test
-        void 정상적으로_팔로우를_삭제한다() {
-            given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(true);
-
+        void 팔로우_관계_존재_여부와_무관하게_삭제를_위임한다() {
             followService.unfollow(1L, 2L);
 
             verify(followRepository).deleteByFollowerIdAndFollowingId(1L, 2L);
-        }
-
-        @Test
-        void 팔로우하고_있지_않으면_예외() {
-            given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(false);
-
-            BusinessException exception = assertThrows(BusinessException.class,
-                    () -> followService.unfollow(1L, 2L));
-
-            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.NOT_FOLLOWING);
-            verify(followRepository, never()).deleteByFollowerIdAndFollowingId(any(), any());
         }
     }
 
