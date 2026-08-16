@@ -66,11 +66,11 @@ public class PopupService {
     @Transactional
     public PopupResponse updatePopup(Long popupId, PopupUpdateRequest request) {
         validatePeriod(request.startDate(), request.endDate());
+        Popup popup = getPopupOrThrow(popupId);
 
         String aiSummary = openAiSummaryClient.summarizeSchedule(
                 request.title(), request.description(), request.startDate(), request.endDate());
 
-        Popup popup = getPopupOrThrow(popupId);
         popup.update(
                 request.title(),
                 request.imageUrl(),

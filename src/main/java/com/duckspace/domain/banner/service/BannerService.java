@@ -16,6 +16,7 @@ import com.duckspace.domain.banner.dto.request.BannerCreateRequest;
 import com.duckspace.domain.banner.dto.request.BannerUpdateRequest;
 import com.duckspace.domain.banner.entity.Banner;
 import com.duckspace.domain.banner.exception.BannerErrorCode;
+import com.duckspace.domain.popup.repository.PopupRepository;
 import com.duckspace.global.exception.BusinessException;
 
 @Service
@@ -26,6 +27,7 @@ public class BannerService {
     private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final BannerRepository bannerRepository;
+    private final PopupRepository popupRepository;
     private final BannerSummaryClient bannerSummaryClient;
 
     public BannerListResponse getActiveBanners() {
@@ -49,6 +51,7 @@ public class BannerService {
     @Transactional
     public BannerResponse createBanner(BannerCreateRequest request) {
         validatePeriod(request.startAt(), request.endAt());
+        validatePopupExists(request.popupId());
 
         String aiSummary = bannerSummaryClient.summarizeBanner(
                 request.title(), request.description(), request.startAt(), request.endAt());
@@ -71,11 +74,12 @@ public class BannerService {
     @Transactional
     public BannerResponse updateBanner(Long bannerId, BannerUpdateRequest request) {
         validatePeriod(request.startAt(), request.endAt());
+        validatePopupExists(request.popupId());
+        Banner banner = getBannerOrThrow(bannerId);
 
         String aiSummary = bannerSummaryClient.summarizeBanner(
                 request.title(), request.description(), request.startAt(), request.endAt());
 
-        Banner banner = getBannerOrThrow(bannerId);
         banner.update(
                 request.imageUrl(),
                 request.title(),
@@ -103,6 +107,12 @@ public class BannerService {
     private void validatePeriod(LocalDateTime startAt, LocalDateTime endAt) {
         if (endAt.isBefore(startAt)) {
             throw new BusinessException(BannerErrorCode.INVALID_BANNER_PERIOD);
+        }
+    }
+
+    private void validatePopupExists(Long popupId) {
+        if (!popupRepository.existsById(popupId)) {
+            throw new BusinessException(BannerErrorCode.POPUP_NOT_FOUND);
         }
     }
 }

@@ -45,7 +45,7 @@ public class User extends BaseTimeEntity {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
-    @Column(name = "role", nullable = false)
+    @Column(name = "role", nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'USER'")
     private Role role;
 
     @Builder
