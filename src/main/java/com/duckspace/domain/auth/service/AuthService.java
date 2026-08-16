@@ -50,7 +50,7 @@ public class AuthService {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
-        return issueTokens(user.getId());
+        return issueTokens(user);
     }
 
     @Transactional
@@ -65,7 +65,7 @@ public class AuthService {
         }
 
         loginAttemptLimiter.onSuccess(request.email());
-        return issueTokens(user.getId());
+        return issueTokens(user);
     }
 
     @Transactional
@@ -75,15 +75,15 @@ public class AuthService {
         }
 
         Long userId = jwtTokenProvider.getUserId(refreshToken);
-        if (!userRepository.existsById(userId)) {
-            throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
-        }
+        // role 은 리프레시 토큰에 없으므로(발급 시점 이후 바뀌었을 수 있음) DB에서 다시 조회합니다.
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
 
         refreshTokenRepository.findByUserId(userId)
                 .filter(saved -> RefreshTokenHasher.matches(refreshToken, saved.getTokenHash()))
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
 
-        return issueTokens(userId);
+        return issueTokens(user);
     }
 
     @Transactional
@@ -98,10 +98,10 @@ public class AuthService {
                 .ifPresent(refreshTokenRepository::delete);
     }
 
-    private TokenResponse issueTokens(Long userId) {
-        String accessToken = jwtTokenProvider.createAccessToken(userId);
-        String refreshToken = jwtTokenProvider.createRefreshToken(userId);
-        saveRefreshToken(userId, refreshToken);
+    private TokenResponse issueTokens(User user) {
+        String accessToken = jwtTokenProvider.createAccessToken(user.getId(), user.getRole());
+        String refreshToken = jwtTokenProvider.createRefreshToken(user.getId());
+        saveRefreshToken(user.getId(), refreshToken);
         return new TokenResponse(accessToken, refreshToken);
     }
 

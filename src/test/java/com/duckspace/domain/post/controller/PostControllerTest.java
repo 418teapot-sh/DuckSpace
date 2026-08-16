@@ -10,6 +10,7 @@ import com.duckspace.global.auth.JwtAccessDeniedHandler;
 import com.duckspace.global.auth.JwtAuthenticationEntryPoint;
 import com.duckspace.global.auth.JwtAuthenticationFilter;
 import com.duckspace.global.auth.JwtTokenProvider;
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.config.CorsConfig;
 import com.duckspace.global.config.SecurityConfig;
 import org.junit.jupiter.api.Test;
@@ -59,7 +60,7 @@ class PostControllerTest {
         CasualPostRequest request = new CasualPostRequest(tooLongContent, null, null);
 
         mockMvc.perform(post("/api/posts/casual")
-                        .with(user(new AuthUser(1L)))
+                        .with(user(new AuthUser(1L, Role.USER)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())

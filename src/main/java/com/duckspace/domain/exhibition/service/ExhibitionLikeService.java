@@ -1,6 +1,8 @@
 package com.duckspace.domain.exhibition.service;
 
+import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.repository.ExhibitionLikeRepository;
+import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -25,7 +27,14 @@ public class ExhibitionLikeService {
         try {
             exhibitionLikeWriter.insert(exhibitionId, userId);
         } catch (DataIntegrityViolationException e) {
-            // 동시에 두 번 눌렸습니다. 이미 눌린 상태이므로 성공으로 봅니다.
+            // 여기로 오는 경우가 두 가지인데 결과가 정반대라 구분해야 합니다.
+            //   1) 유니크 제약 — 동시에 두 번 눌렸습니다. 이미 눌린 상태이므로 성공.
+            //   2) FK 제약 — 위 존재 확인과 INSERT 사이에 장식장이 삭제됐습니다. 좋아요는
+            //      기록되지 않았는데도 성공을 돌려주면, 화면에는 눌린 것처럼 보입니다.
+            // 예외 메시지로 가르는 건 DB 마다 달라 깨지기 쉬우므로, 결과를 직접 확인합니다.
+            if (!exhibitionLikeRepository.existsByExhibitionIdAndUserId(exhibitionId, userId)) {
+                throw new BusinessException(ExhibitionErrorCode.EXHIBITION_NOT_FOUND);
+            }
         }
     }
 

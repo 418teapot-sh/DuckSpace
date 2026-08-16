@@ -67,8 +67,9 @@ public class PostService {
         return post.getId();
     }
 
-    public List<CasualPostSummaryResponse> listCasual(String keyword, Long cursor, Integer size) {
-        List<Post> posts = postRepository.search(BoardType.CASUAL, normalizeKeyword(keyword), cursor, pageable(size));
+    public List<CasualPostSummaryResponse> listCasual(String keyword, Long cursor, Integer size, Long authorId) {
+        List<Post> posts = postRepository.search(
+                BoardType.CASUAL, cursor, normalizeKeyword(keyword), authorId, pageable(size));
         if (posts.isEmpty()) {
             return List.of();
         }
@@ -107,8 +108,9 @@ public class PostService {
         return post.getId();
     }
 
-    public List<ExchangePostSummaryResponse> listExchange(String keyword, Long cursor, Integer size) {
-        List<Post> posts = postRepository.search(BoardType.EXCHANGE, normalizeKeyword(keyword), cursor, pageable(size));
+    public List<ExchangePostSummaryResponse> listExchange(String keyword, Long cursor, Integer size, Long authorId) {
+        List<Post> posts = postRepository.search(
+                BoardType.EXCHANGE, cursor, normalizeKeyword(keyword), authorId, pageable(size));
         if (posts.isEmpty()) {
             return List.of();
         }

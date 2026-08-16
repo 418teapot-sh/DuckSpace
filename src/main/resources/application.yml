@@ -3,6 +3,11 @@ spring:
     name: duckspace
   profiles:
     default: local
+  config:
+    # 프로젝트 루트의 .env 를 읽습니다. 없으면 그냥 넘어갑니다(optional).
+    # 로컬에서 외부 API 키를 넣을 때 쓰고, .env 는 .gitignore 로 막혀 있습니다.
+    # dev/prod 는 파일 대신 진짜 환경변수(/etc/duckspace/app.env)를 씁니다.
+    import: optional:file:.env[.properties]
   jpa:
     # 트랜잭션 밖(뷰 렌더링 시점)까지 영속성 컨텍스트를 열어두지 않습니다.
     # 켜두면 요청 내내 DB 커넥션을 붙잡고 있어 커넥션 풀이 금방 마릅니다.
@@ -23,3 +28,38 @@ jwt:
 cors:
   # 배포 시 CORS_ALLOWED_ORIGINS로 덮어쓰세요. 와일드카드(*) 사용 가능.
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://*.vercel.app}
+
+# 굿즈 사진 배경 제거. 키가 없으면 배경 제거를 건너뜁니다.
+# JWT_SECRET 과 달리 빈 값이 보안 문제가 되지 않고, 키 없는 팀원도 나머지 기능을
+# 개발할 수 있어야 해서 부팅을 막지 않습니다.
+removebg:
+  api-key: ${REMOVEBG_API_KEY:}
+  # preview(0.25MP)만 무료 호출(월 50회)로 처리됩니다.
+  # auto/full 은 크레딧을 소모하며, 크레딧이 없으면 402로 실패합니다.
+  size: preview
+
+openai:
+  # JWT_SECRET과 달리 빈 값이 보안 문제가 되지 않고, 키 없는 팀원도 나머지 기능을
+  # 개발할 수 있어야 해서 부팅을 막지 않습니다. 키가 없으면 BannerSummaryClient가
+  # 요약 호출에 실패하고 null로 폴백합니다(배너 등록 자체는 막지 않음).
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+
+# 처리된 이미지 저장 위치.
+#
+# 기본값을 두지 않습니다. JWT_SECRET 과 같은 이유입니다 — 배포에서 STORAGE_TYPE 을 빠뜨리면
+# 조용히 로컬 파일시스템으로 뜨고, 재배포마다 사라지는 경로가 imageUrl 로 DB 에 영구 저장됩니다.
+# 부팅 시점에는 아무 에러도 나지 않아서 한참 뒤에야 발견하게 됩니다.
+# (local/test 프로필은 application-local.yml / application-test.yml 에서 local 로 지정합니다)
+storage:
+  type: ${STORAGE_TYPE}
+  local:
+    directory: ./uploads
+    public-base-url: http://localhost:8080/uploads
+  s3:
+    # 버킷명도 기본값을 두지 않습니다. 실제 운영 버킷이 코드에 박혀 있으면
+    # 설정을 깜빡한 환경이 조용히 운영 버킷에 쓰게 됩니다.
+    bucket: ${S3_BUCKET}
+    region: ${AWS_REGION:ap-northeast-2}
+    # 비우면 https://{bucket}.s3.{region}.amazonaws.com 을 씁니다.
+    public-base-url: ${S3_PUBLIC_BASE_URL:}

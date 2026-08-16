@@ -31,14 +31,17 @@ public class ExhibitionSearchController {
 
     @Operation(summary = "전시 검색",
             description = """
-                    굿즈 이름·브랜드가 키워드와 겹치는 장식장을 돌려줍니다.
+                    굿즈 이름이 키워드와 겹치는 장식장을 돌려줍니다.
                     키워드가 비어 있으면 빈 목록입니다. limit 기본 10, 최대 50.
+                    **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
                     """)
     @GetMapping("/exhibitions")
     public ApiResponse<List<ExhibitionSummaryResponse>> searchExhibitions(
             @AuthenticationPrincipal AuthUser authUser,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.search(keyword, limit, authUser.getUserId()));
+        // 공개 엔드포인트라 비로그인이면 authUser 가 null 입니다. (ExhibitionController.viewerId 주석 참고)
+        Long viewerId = (authUser == null) ? null : authUser.getUserId();
+        return ApiResponse.success(exhibitionService.search(keyword, limit, viewerId));
     }
 }
