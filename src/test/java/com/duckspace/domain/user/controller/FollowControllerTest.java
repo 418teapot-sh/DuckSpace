@@ -4,6 +4,7 @@ import com.duckspace.domain.user.dto.response.FollowUserResponse;
 import com.duckspace.domain.user.exception.UserErrorCode;
 import com.duckspace.domain.user.service.FollowService;
 import com.duckspace.global.auth.AuthUser;
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.auth.JwtAccessDeniedHandler;
 import com.duckspace.global.auth.JwtAuthenticationEntryPoint;
 import com.duckspace.global.auth.JwtAuthenticationFilter;
@@ -56,7 +57,7 @@ class FollowControllerTest {
                 .given(followService).follow(eq(1L), eq(1L));
 
         mockMvc.perform(post("/api/users/1/follow")
-                        .with(user(new AuthUser(1L))))
+                        .with(user(new AuthUser(1L, Role.USER))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("SELF_FOLLOW_NOT_ALLOWED"));
@@ -65,7 +66,7 @@ class FollowControllerTest {
     @Test
     void follow_이미_팔로우했어도_성공한다() throws Exception {
         mockMvc.perform(post("/api/users/2/follow")
-                        .with(user(new AuthUser(1L))))
+                        .with(user(new AuthUser(1L, Role.USER))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
@@ -75,7 +76,7 @@ class FollowControllerTest {
     @Test
     void unfollow_정상_요청은_204에_준하는_응답을_반환한다() throws Exception {
         mockMvc.perform(delete("/api/users/2/follow")
-                        .with(user(new AuthUser(1L))))
+                        .with(user(new AuthUser(1L, Role.USER))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
@@ -87,7 +88,7 @@ class FollowControllerTest {
         given(followService.getFollowers(eq(2L), eq(5L), eq(10))).willReturn(List.of());
 
         mockMvc.perform(get("/api/users/2/followers")
-                        .with(user(new AuthUser(1L)))
+                        .with(user(new AuthUser(1L, Role.USER)))
                         .param("cursor", "5")
                         .param("size", "10"))
                 .andExpect(status().isOk());
@@ -101,7 +102,7 @@ class FollowControllerTest {
                 .willReturn(List.of(new FollowUserResponse(3L, "닉네임")));
 
         mockMvc.perform(get("/api/users/2/following")
-                        .with(user(new AuthUser(1L))))
+                        .with(user(new AuthUser(1L, Role.USER))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].userId").value(3))
                 .andExpect(jsonPath("$.data[0].nickname").value("닉네임"));

@@ -35,6 +35,10 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
+            "/api/home",
+            "/api/banners",
+            "/api/popups",
+            "/api/popups/**",
             "/actuator/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -55,6 +59,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()   // CORS preflight
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
 

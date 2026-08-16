@@ -1,13 +1,14 @@
 package com.duckspace.global.auth;
 
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
 import java.util.List;
 
 /**
- * 인증된 사용자 정보. JWT 에서 꺼낸 userId 만 담습니다. (DB 조회 없음)
+ * 인증된 사용자 정보. JWT 에서 꺼낸 userId/role 만 담습니다. (DB 조회 없음)
  *
  * <p>컨트롤러에서 로그인한 유저 id 를 꺼내는 방법:
  * <pre>{@code
@@ -17,7 +18,7 @@ import java.util.List;
  * }
  * }</pre>
  */
-public record AuthUser(Long userId) implements UserDetails {
+public record AuthUser(Long userId, Role role) implements UserDetails {
 
     public Long getUserId() {
         return userId;
@@ -25,7 +26,7 @@ public record AuthUser(Long userId) implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of();
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     @Override
