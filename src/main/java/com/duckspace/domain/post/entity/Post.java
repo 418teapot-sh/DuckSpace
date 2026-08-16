@@ -25,7 +25,11 @@ import java.time.LocalDateTime;
  * 공통 필드만 여기 두고 나머지는 보드 타입별 테이블로 분리했습니다.
  */
 @Entity
-@Table(name = "post", indexes = @Index(name = "idx_post_feed", columnList = "board_type, deleted_at, id"))
+@Table(name = "post", indexes = {
+        @Index(name = "idx_post_feed", columnList = "board_type, deleted_at, id"),
+        // authorId 필터(마이페이지)용. board_type/deleted_at까지 넣어 커버링에 가깝게 만듭니다.
+        @Index(name = "idx_post_author_feed", columnList = "user_id, board_type, deleted_at, id")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Post extends BaseTimeEntity {

@@ -16,6 +16,7 @@ import com.duckspace.domain.post.entity.TradeItem;
 import com.duckspace.domain.post.entity.TradeItemSide;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
+import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostIdCount;
@@ -26,6 +27,7 @@ import com.duckspace.domain.post.repository.TradeItemRepository;
 import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
+import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -49,10 +51,12 @@ public class PostService {
     private final PostImageRepository postImageRepository;
     private final PostHashtagRepository postHashtagRepository;
     private final ExchangeDetailRepository exchangeDetailRepository;
+    private final ExchangeApplicationRepository exchangeApplicationRepository;
     private final TradeItemRepository tradeItemRepository;
     private final PostLikeRepository postLikeRepository;
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
+    private final ExchangeApplicationWriter exchangeApplicationWriter;
 
     @Transactional
     public Long createCasual(Long userId, CasualPostRequest request) {
@@ -63,8 +67,9 @@ public class PostService {
         return post.getId();
     }
 
-    public List<CasualPostSummaryResponse> listCasual(String keyword, Long cursor, Integer size) {
-        List<Post> posts = postRepository.search(BoardType.CASUAL, normalizeKeyword(keyword), cursor, pageable(size));
+    public List<CasualPostSummaryResponse> listCasual(String keyword, Long cursor, Integer size, Long authorId) {
+        List<Post> posts = postRepository.search(
+                BoardType.CASUAL, cursor, normalizeKeyword(keyword), authorId, pageable(size));
         if (posts.isEmpty()) {
             return List.of();
         }
@@ -90,7 +95,8 @@ public class PostService {
     public Long createExchange(Long userId, ExchangePostRequest request) {
         Post post = postRepository.save(Post.createExchange(userId, request.title(), request.content()));
         ExchangeDetail detail = exchangeDetailRepository.save(
-                new ExchangeDetail(post, request.method(), request.extraCondition()));
+                new ExchangeDetail(post, request.extraCondition(),
+                        request.preferredPopupName(), request.preferredDate(), request.preferredTime()));
 
         OfferedItemRequest offered = request.offeredItem();
         tradeItemRepository.save(TradeItem.offered(
@@ -102,8 +108,9 @@ public class PostService {
         return post.getId();
     }
 
-    public List<ExchangePostSummaryResponse> listExchange(String keyword, Long cursor, Integer size) {
-        List<Post> posts = postRepository.search(BoardType.EXCHANGE, normalizeKeyword(keyword), cursor, pageable(size));
+    public List<ExchangePostSummaryResponse> listExchange(String keyword, Long cursor, Integer size, Long authorId) {
+        List<Post> posts = postRepository.search(
+                BoardType.EXCHANGE, cursor, normalizeKeyword(keyword), authorId, pageable(size));
         if (posts.isEmpty()) {
             return List.of();
         }
@@ -127,7 +134,6 @@ public class PostService {
                     return new ExchangePostSummaryResponse(
                             post.getId(),
                             post.getTitle(),
-                            detail.getMethod(),
                             detail.getStatus(),
                             itemNameOf(items, TradeItemSide.OFFERED),
                             itemNameOf(items, TradeItemSide.WANTED),
@@ -164,9 +170,11 @@ public class PostService {
                     .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
             List<TradeItem> items = tradeItemRepository.findByExchangeDetail_PostIdOrderBySideAsc(postId);
             exchangeInfo = new PostDetailResponse.ExchangeInfo(
-                    detail.getMethod(),
                     detail.getStatus(),
                     detail.getExtraCondition(),
+                    detail.getPreferredPopupName(),
+                    detail.getPreferredDate(),
+                    detail.getPreferredTime(),
                     toItemInfo(findBySide(items, TradeItemSide.OFFERED)),
                     toItemInfo(findBySide(items, TradeItemSide.WANTED)));
         }
@@ -209,17 +217,28 @@ public class PostService {
         post.delete();
     }
 
+    /**
+     * ExchangeApplication이 생기기 전부터 있던 완료 처리 경로입니다. 진행중인 신청이 있다면
+     * {@link ExchangeApplicationService#complete}를 거치는 쪽이 정석이지만, 이 경로로 들어와도
+     * ACCEPTED 상태 신청이 있으면 같이 COMPLETED로 맞춰서 신청 쪽이 영원히 ACCEPTED로 남는 걸 막습니다.
+     */
     @Transactional
     public void completeExchange(Long postId, Long userId) {
         Post post = getOwnedPost(postId, userId);
         requireBoardType(post, BoardType.EXCHANGE);
 
-        ExchangeDetail detail = exchangeDetailRepository.findById(postId)
+        ExchangeDetail detail = exchangeDetailRepository.findByPostIdForUpdate(postId)
                 .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
         if (detail.isCompleted()) {
             throw new BusinessException(PostErrorCode.EXCHANGE_ALREADY_COMPLETED);
         }
         detail.complete();
+
+        exchangeApplicationWriter.findAcceptedByPostId(postId)
+                .ifPresent(application -> {
+                    application.complete();
+                    exchangeApplicationRepository.save(application);
+                });
     }
 
     Post getPost(Long postId) {
@@ -227,7 +246,8 @@ public class PostService {
                 .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
     }
 
-    private Post getOwnedPost(Long postId, Long userId) {
+    /** package-private: ExchangeApplicationService도 "글쓴이만" 체크에 재사용합니다. */
+    Post getOwnedPost(Long postId, Long userId) {
         Post post = getPost(postId);
         if (!post.isOwnedBy(userId)) {
             throw new BusinessException(PostErrorCode.NOT_POST_OWNER);
@@ -295,8 +315,7 @@ public class PostService {
 
     private Map<Long, String> batchNicknames(List<Post> posts) {
         List<Long> authorIds = posts.stream().map(Post::getUserId).distinct().toList();
-        return userRepository.findAllById(authorIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getNickname));
+        return userRepository.findNicknamesByIds(authorIds);
     }
 
     /** LIKE 패턴의 %/_/\\ 는 와일드카드로 해석되므로, 검색어에 그대로 들어오면 이스케이프합니다. */
@@ -311,13 +330,6 @@ public class PostService {
     }
 
     private Pageable pageable(Integer size) {
-        return PageRequest.of(0, normalizeSize(size));
-    }
-
-    private int normalizeSize(Integer size) {
-        if (size == null || size <= 0) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(size, MAX_PAGE_SIZE);
+        return PageRequest.of(0, Paging.normalize(size, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE));
     }
 }

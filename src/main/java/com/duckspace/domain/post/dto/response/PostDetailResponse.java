@@ -1,7 +1,6 @@
 package com.duckspace.domain.post.dto.response;
 
 import com.duckspace.domain.post.entity.BoardType;
-import com.duckspace.domain.post.entity.ExchangeMethod;
 import com.duckspace.domain.post.entity.ExchangeStatus;
 import com.duckspace.domain.post.entity.ItemCondition;
 
@@ -30,9 +29,11 @@ public record PostDetailResponse(
         ExchangeInfo exchangeInfo
 ) {
     public record ExchangeInfo(
-            ExchangeMethod method,
             ExchangeStatus status,
             String extraCondition,
+            String preferredPopupName,
+            String preferredDate,
+            String preferredTime,
             TradeItemInfo offeredItem,
             TradeItemInfo wantedItem
     ) {

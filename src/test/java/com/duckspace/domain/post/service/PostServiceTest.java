@@ -6,13 +6,15 @@ import com.duckspace.domain.post.dto.request.OfferedItemRequest;
 import com.duckspace.domain.post.dto.request.WantedItemRequest;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
+import com.duckspace.domain.post.entity.ExchangeApplication;
+import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
 import com.duckspace.domain.post.entity.ExchangeDetail;
-import com.duckspace.domain.post.entity.ExchangeMethod;
 import com.duckspace.domain.post.entity.ItemCondition;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.entity.TradeItem;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
+import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostImageRepository;
@@ -54,6 +56,8 @@ class PostServiceTest {
     @Mock
     private ExchangeDetailRepository exchangeDetailRepository;
     @Mock
+    private ExchangeApplicationRepository exchangeApplicationRepository;
+    @Mock
     private TradeItemRepository tradeItemRepository;
     @Mock
     private PostLikeRepository postLikeRepository;
@@ -61,13 +65,16 @@ class PostServiceTest {
     private CommentRepository commentRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private ExchangeApplicationWriter exchangeApplicationWriter;
 
     private PostService postService;
 
     @BeforeEach
     void setUp() {
         postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
-                exchangeDetailRepository, tradeItemRepository, postLikeRepository, commentRepository, userRepository);
+                exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
+                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter);
     }
 
     private Post casualPost(Long id, Long userId) {
@@ -118,11 +125,29 @@ class PostServiceTest {
 
         @Test
         void 키워드의_LIKE_와일드카드를_이스케이프해서_넘긴다() {
-            given(postRepository.search(any(), any(), any(), any())).willReturn(List.of());
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
 
-            postService.listCasual("50%_off", null, null);
+            postService.listCasual("50%_off", null, null, null);
 
-            verify(postRepository).search(any(), eq("50\\%\\_off"), any(), any());
+            verify(postRepository).search(any(), any(), eq("50\\%\\_off"), any(), any());
+        }
+
+        @Test
+        void authorId를_그대로_리포지토리에_넘긴다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listCasual(null, null, null, 42L);
+
+            verify(postRepository).search(any(), any(), any(), eq(42L), any());
+        }
+
+        @Test
+        void keyword와_authorId를_동시에_넘기면_둘_다_그대로_전달된다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listCasual("치이카와", null, null, 42L);
+
+            verify(postRepository).search(any(), any(), eq("치이카와"), eq(42L), any());
         }
     }
 
@@ -140,10 +165,10 @@ class PostServiceTest {
             given(exchangeDetailRepository.save(any(ExchangeDetail.class))).willAnswer(invocation -> invocation.getArgument(0));
 
             ExchangePostRequest request = new ExchangePostRequest(
-                    ExchangeMethod.DIRECT, "제목", "본문",
+                    "제목", "본문",
                     new OfferedItemRequest("offer.png", "인형", "브랜드A", ItemCondition.UNOPENED),
                     new WantedItemRequest("want.png", "키링", "브랜드B"),
-                    "직거래만 가능");
+                    "직거래만 가능", "치이카와 in 성수", "260809", "12시부터14시까지");
 
             Long postId = postService.createExchange(10L, request);
 
@@ -159,13 +184,31 @@ class PostServiceTest {
         @Test
         void ExchangeDetail이_없는_글은_목록에서_건너뛴다() {
             Post postWithoutDetail = exchangePost(1L, 10L);
-            given(postRepository.search(any(), any(), any(), any())).willReturn(List.of(postWithoutDetail));
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of(postWithoutDetail));
             given(exchangeDetailRepository.findAllById(any())).willReturn(List.of());
             given(tradeItemRepository.findByExchangeDetail_PostIdIn(any())).willReturn(List.of());
 
-            List<ExchangePostSummaryResponse> responses = postService.listExchange(null, null, null);
+            List<ExchangePostSummaryResponse> responses = postService.listExchange(null, null, null, null);
 
             assertThat(responses).isEmpty();
+        }
+
+        @Test
+        void authorId를_그대로_리포지토리에_넘긴다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listExchange(null, null, null, 42L);
+
+            verify(postRepository).search(any(), any(), any(), eq(42L), any());
+        }
+
+        @Test
+        void keyword와_authorId를_동시에_넘기면_둘_다_그대로_전달된다() {
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
+
+            postService.listExchange("치이카와", null, null, 42L);
+
+            verify(postRepository).search(any(), any(), eq("치이카와"), eq(42L), any());
         }
     }
 
@@ -186,7 +229,7 @@ class PostServiceTest {
         @Test
         void 교환글이면_exchangeInfo를_채운다() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, ExchangeMethod.DELIVERY, "택배비 반반");
+            ExchangeDetail detail = new ExchangeDetail(post, "택배비 반반", "치이카와 in 성수", "260809", "12시부터14시까지");
             TradeItem offered = TradeItem.offered(detail, "offer.png", "인형", "브랜드A", ItemCondition.LIGHTLY_USED);
             TradeItem wanted = TradeItem.wanted(detail, null, "키링", null);
 
@@ -199,6 +242,7 @@ class PostServiceTest {
             assertThat(response.exchangeInfo()).isNotNull();
             assertThat(response.exchangeInfo().offeredItem().itemName()).isEqualTo("인형");
             assertThat(response.exchangeInfo().wantedItem().itemName()).isEqualTo("키링");
+            assertThat(response.exchangeInfo().preferredPopupName()).isEqualTo("치이카와 in 성수");
             assertThat(response.mine()).isFalse();
             assertThat(response.imageUrls()).isEmpty();
         }
@@ -320,9 +364,9 @@ class PostServiceTest {
         @Test
         void 정상적으로_완료_처리한다() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, ExchangeMethod.DIRECT, null);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             postService.completeExchange(1L, 10L);
 
@@ -330,12 +374,29 @@ class PostServiceTest {
         }
 
         @Test
+        void ACCEPTED_상태_신청이_있으면_같이_완료된다() {
+            Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
+            ExchangeApplication application = new ExchangeApplication(1L, 20L, "인형", null, null, null, null);
+            application.accept();
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.findAcceptedByPostId(1L)).willReturn(Optional.of(application));
+
+            postService.completeExchange(1L, 10L);
+
+            assertThat(detail.isCompleted()).isTrue();
+            assertThat(application.getStatus()).isEqualTo(ExchangeApplicationStatus.COMPLETED);
+            verify(exchangeApplicationRepository).save(application);
+        }
+
+        @Test
         void 이미_완료된_글이면_예외() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, ExchangeMethod.DIRECT, null);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             detail.complete();
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> postService.completeExchange(1L, 10L));
