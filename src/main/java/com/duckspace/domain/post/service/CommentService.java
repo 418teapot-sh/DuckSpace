@@ -6,7 +6,6 @@ import com.duckspace.domain.post.entity.Comment;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
-import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -57,8 +56,7 @@ public class CommentService {
         List<Comment> all = new ArrayList<>(topLevel);
         all.addAll(replies);
         List<Long> authorIds = all.stream().map(Comment::getUserId).distinct().toList();
-        Map<Long, String> nicknames = userRepository.findAllById(authorIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getNickname));
+        Map<Long, String> nicknames = userRepository.findNicknamesByIds(authorIds);
 
         Map<Long, List<Comment>> repliesByParentId = replies.stream()
                 .collect(Collectors.groupingBy(reply -> reply.getParent().getId()));

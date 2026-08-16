@@ -43,6 +43,9 @@ public class User extends BaseTimeEntity {
     @Column(name = "auth_provider", nullable = false)
     private AuthProvider authProvider;
 
+    @Column(name = "profile_image_url", length = 500)
+    private String profileImageUrl;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "role", nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'USER'")
@@ -57,8 +60,12 @@ public class User extends BaseTimeEntity {
         this.role = role == null ? Role.USER : role;
     }
 
-    public User updateNickname(String nickname) {
+    /** {@code profileImageUrl}이 null이면 기존 값을 유지합니다(부분 수정). */
+    public User updateProfile(String nickname, String profileImageUrl) {
         this.nickname = nickname;
+        if (profileImageUrl != null) {
+            this.profileImageUrl = profileImageUrl;
+        }
         return this;
     }
 

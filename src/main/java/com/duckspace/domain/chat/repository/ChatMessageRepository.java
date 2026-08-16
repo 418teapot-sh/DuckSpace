@@ -18,6 +18,14 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     /** 최초 진입용. 최신 메시지부터 가져오므로 응답 전에 뒤집어야 합니다. */
     List<ChatMessage> findByRoomIdOrderByIdDesc(Long roomId, Pageable pageable);
 
+    /**
+     * 지난 대화용. {@code beforeId} <b>이전</b> 메시지를 최신 쪽부터 가져옵니다.
+     * (위로 스크롤할 때 커서 바로 위 메시지들이 먼저 필요하므로) 응답 전에 뒤집어야 합니다.
+     *
+     * <p>폴링 인덱스 {@code (room_id, id)} 를 그대로 탑니다.
+     */
+    List<ChatMessage> findByRoomIdAndIdLessThanOrderByIdDesc(Long roomId, Long beforeId, Pageable pageable);
+
     /** 방 하나의 마지막 메시지. 채팅방 조회/생성 응답을 목록과 같은 내용으로 채우는 데 씁니다. */
     Optional<ChatMessage> findTopByRoomIdOrderByIdDesc(Long roomId);
 
