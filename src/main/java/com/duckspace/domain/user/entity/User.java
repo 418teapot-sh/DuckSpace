@@ -1,5 +1,6 @@
 package com.duckspace.domain.user.entity;
 
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -42,16 +43,29 @@ public class User extends BaseTimeEntity {
     @Column(name = "auth_provider", nullable = false)
     private AuthProvider authProvider;
 
+    @Column(name = "profile_image_url", length = 500)
+    private String profileImageUrl;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "role", nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'USER'")
+    private Role role;
+
     @Builder
-    private User(String email, String nickname, String password, AuthProvider authProvider) {
+    private User(String email, String nickname, String password, AuthProvider authProvider, Role role) {
         this.email = email;
         this.nickname = nickname;
         this.password = password;
         this.authProvider = authProvider;
+        this.role = role == null ? Role.USER : role;
     }
 
-    public User updateNickname(String nickname) {
+    /** {@code profileImageUrl}이 null이면 기존 값을 유지합니다(부분 수정). */
+    public User updateProfile(String nickname, String profileImageUrl) {
         this.nickname = nickname;
+        if (profileImageUrl != null) {
+            this.profileImageUrl = profileImageUrl;
+        }
         return this;
     }
 

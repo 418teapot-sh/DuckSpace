@@ -26,12 +26,14 @@ class ExhibitionLikeWriter {
     private final ExhibitionLikeRepository exhibitionLikeRepository;
     private final ExhibitionRepository exhibitionRepository;
 
-    /** 이미 눌러둔 상태면 아무 일도 하지 않습니다. 제약 위반은 호출부가 잡습니다. */
+    /**
+     * 그냥 넣습니다. 이미 눌러둔 상태면 유니크 제약이 걸리고, 호출부가 그걸 잡아 처리합니다.
+     *
+     * <p>예전에는 여기서 {@code existsBy} 로 먼저 확인했는데, 어차피 제약 위반을 처리해야 하니
+     * (동시 요청은 사전 확인으로 막을 수 없습니다) 매 클릭마다 SELECT 만 하나 더 나가는 셈이었습니다.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void insert(Long exhibitionId, Long userId) {
-        if (exhibitionLikeRepository.existsByExhibitionIdAndUserId(exhibitionId, userId)) {
-            return;
-        }
         Exhibition reference = exhibitionRepository.getReferenceById(exhibitionId);
         exhibitionLikeRepository.saveAndFlush(new ExhibitionLike(reference, userId));
     }
