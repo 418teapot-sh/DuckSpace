@@ -10,7 +10,8 @@ import java.time.LocalDateTime;
  *
  * <p>{@code posX/posY/width/height} 는 <b>배경 대비 비율(0.0 ~ 1.0)</b>입니다.
  *
- * @param status PENDING 이면 이미지 처리 중입니다. 프론트는 READY 가 될 때까지 폴링하세요.
+ * @param rotation 회전 각도(도). {@code -180 ~ 180}, 0 이 기본이고 양수가 시계 방향입니다.
+ * @param status   PENDING 이면 이미지 처리 중입니다. 프론트는 READY 가 될 때까지 폴링하세요.
  */
 public record ExhibitionItemResponse(
         Long itemId,
@@ -18,6 +19,7 @@ public record ExhibitionItemResponse(
         Double posY,
         Double width,
         Double height,
+        Double rotation,
         String imageUrl,
         String itemName,
         Integer price,
@@ -33,6 +35,7 @@ public record ExhibitionItemResponse(
                 item.getPosY(),
                 item.getWidth(),
                 item.getHeight(),
+                item.getRotation(),
                 item.getImageUrl(),
                 item.getItemName(),
                 item.getPrice(),

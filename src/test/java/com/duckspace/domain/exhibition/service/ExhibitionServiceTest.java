@@ -52,6 +52,9 @@ class ExhibitionServiceTest {
     @Mock
     private ExhibitionLikeRepository exhibitionLikeRepository;
 
+    @Mock
+    private com.duckspace.domain.exhibition.image.ImageCleanup imageCleanup;
+
     @InjectMocks
     private ExhibitionService exhibitionService;
 
@@ -178,6 +181,56 @@ class ExhibitionServiceTest {
             verify(exhibitionLikeRepository).deleteByExhibitionId(EXHIBITION_ID);
             verify(exhibitionRepository).delete(exhibition);
         }
+
+        @Test
+        void 저장된_이미지도_함께_정리한다() {
+            given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
+            given(exhibitionItemRepository.findImageUrlsByExhibitionId(EXHIBITION_ID))
+                    .willReturn(List.of("https://cdn/a.png", "https://cdn/b.png"));
+
+            exhibitionService.delete(EXHIBITION_ID, OWNER);
+
+            // 행을 지운 뒤에는 이미지 주소를 알아낼 방법이 없어서, 미리 챙겨두지 않으면
+            // S3 객체가 영구히 남습니다.
+            verify(imageCleanup).deleteAfterCommit(List.of("https://cdn/a.png", "https://cdn/b.png"));
+        }
+    }
+
+    @Nested
+    @DisplayName("getMine 메서드는")
+    class Mine {
+
+        @Test
+        void 내_장식장을_카드_형태로_돌려준다() {
+            Exhibition e = exhibitionWithId(3L, OWNER, "내 장식장");
+
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of(itemOf(e, "thumb.png")));
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getMine(OWNER, null);
+
+            assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
+            assertThat(result.get(0).thumbnailUrl()).isEqualTo("thumb.png");
+        }
+
+        @Test
+        void limit을_주지_않으면_20개를_가져온다() {
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            exhibitionService.getMine(OWNER, null);
+
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(exhibitionRepository).findIdsByUserId(eq(OWNER), captor.capture());
+            assertThat(captor.getValue().getPageSize())
+                    .as("내 장식장은 한 화면에 다 보이는 편이 자연스럽습니다")
+                    .isEqualTo(20);
+        }
     }
 
     @Nested
@@ -204,6 +257,25 @@ class ExhibitionServiceTest {
             assertThat(result.get(0).likedByMe()).isTrue();
             assertThat(result.get(1).thumbnailUrl()).isNull();
             assertThat(result.get(1).likedByMe()).isFalse();
+        }
+
+        @Test
+        @DisplayName("비로그인(viewerId=null)이어도 좋아요 여부만 false 로 채워 돌려준다")
+        void 비로그인도_조회할_수_있다() {
+            // 홈 화면(/api/home)이 인증 없이 열려서 viewerId 가 null 로 들어옵니다.
+            Exhibition e = exhibitionWithId(3L, 2L, "인기1위");
+
+            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of(itemOf(e, "thumb.png")));
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getPopular(10, null);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).likedByMe()).isFalse();
         }
 
         @Test

@@ -48,3 +48,6 @@ out/
 src/main/resources/application-secret.yml
 src/main/resources/application-prod.yml
 .DS_Store
+
+### 로컬 이미지 업로드 산출물 ###
+uploads/
