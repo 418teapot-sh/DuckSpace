@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 class LoginAttemptLimiter {
 
-    private static final int MAX_ATTEMPTS = 5;
+    private static final int MAX_ATTEMPTS = 500; // TODO: 임시 상향, 나중에 5로 되돌릴 것
     private static final Duration WINDOW = Duration.ofMinutes(15);
 
     private record Attempt(AtomicInteger count, Instant windowStart) {
