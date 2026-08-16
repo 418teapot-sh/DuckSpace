@@ -8,6 +8,14 @@
 jwt:
   secret: test-only-secret-key-do-not-use-in-production-0123456789
 
+openai:
+  api-key: test-dummy-key
+  model: gpt-4o-mini
+
+# 테스트에는 AWS 자격증명이 없습니다.
+storage:
+  type: local
+
 spring:
   # @DataJpaTest 는 기본적으로 데이터소스를 내장 DB로 바꿔치기합니다. 그러면 아래 설정이 무시되므로 끕니다.
   test:

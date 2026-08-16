@@ -11,6 +11,7 @@ import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.auth.JwtProperties;
 import com.duckspace.global.auth.JwtTokenProvider;
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -209,7 +210,7 @@ class AuthServiceTest {
         void 저장된_토큰과_일치하면_새_토큰을_발급한다() {
             String refreshToken = jwtTokenProvider.createRefreshToken(1L);
             RefreshToken saved = new RefreshToken(1L, RefreshTokenHasher.hash(refreshToken));
-            given(userRepository.existsById(1L)).willReturn(true);
+            given(userRepository.findById(1L)).willReturn(Optional.of(localUser("test@duckspace.com", "encoded")));
             given(refreshTokenRepository.findByUserId(1L)).willReturn(Optional.of(saved));
 
             TokenResponse response = authService.reissue(refreshToken);
@@ -220,7 +221,7 @@ class AuthServiceTest {
 
         @Test
         void 액세스_토큰으로_시도하면_예외() {
-            String accessToken = jwtTokenProvider.createAccessToken(1L);
+            String accessToken = jwtTokenProvider.createAccessToken(1L, Role.USER);
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> authService.reissue(accessToken));
@@ -240,7 +241,7 @@ class AuthServiceTest {
         void 저장된_해시와_일치하지_않으면_예외() {
             String refreshToken = jwtTokenProvider.createRefreshToken(1L);
             RefreshToken saved = new RefreshToken(1L, RefreshTokenHasher.hash("다른-토큰"));
-            given(userRepository.existsById(1L)).willReturn(true);
+            given(userRepository.findById(1L)).willReturn(Optional.of(localUser("test@duckspace.com", "encoded")));
             given(refreshTokenRepository.findByUserId(1L)).willReturn(Optional.of(saved));
 
             BusinessException exception = assertThrows(BusinessException.class,

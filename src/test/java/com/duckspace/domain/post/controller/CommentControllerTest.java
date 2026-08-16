@@ -8,6 +8,7 @@ import com.duckspace.global.auth.JwtAccessDeniedHandler;
 import com.duckspace.global.auth.JwtAuthenticationEntryPoint;
 import com.duckspace.global.auth.JwtAuthenticationFilter;
 import com.duckspace.global.auth.JwtTokenProvider;
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.config.CorsConfig;
 import com.duckspace.global.config.SecurityConfig;
 import com.duckspace.global.exception.BusinessException;
@@ -53,7 +54,7 @@ class CommentControllerTest {
         given(commentService.list(eq(1L), eq(10L), eq(5L), eq(10))).willReturn(java.util.List.of());
 
         mockMvc.perform(get("/api/posts/1/comments")
-                        .with(user(new AuthUser(10L)))
+                        .with(user(new AuthUser(10L, Role.USER)))
                         .param("cursor", "5")
                         .param("size", "10"))
                 .andExpect(status().isOk());
@@ -67,7 +68,7 @@ class CommentControllerTest {
                 .given(reportService).reportComment(eq(10L), eq(5L), any());
 
         mockMvc.perform(post("/api/comments/5/report")
-                        .with(user(new AuthUser(10L))))
+                        .with(user(new AuthUser(10L, Role.USER))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("ALREADY_REPORTED"));

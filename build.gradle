@@ -42,6 +42,11 @@ dependencies {
 
 	// Swagger (springdoc)
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.1'
+
+	// S3 업로드. Spring Cloud AWS 는 Boot 4 대응이 확인되지 않아 순수 SDK 를 씁니다.
+	// (SDK 는 Spring 과 독립적이라 Boot 버전에 영향받지 않습니다)
+	implementation platform('software.amazon.awssdk:bom:2.34.0')
+	implementation 'software.amazon.awssdk:s3'
 }
 
 tasks.named('test') {

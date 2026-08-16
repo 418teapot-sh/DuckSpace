@@ -35,10 +35,33 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
+            "/api/home",
+            "/api/banners",
+            "/api/popups",
+            "/api/popups/**",
             "/actuator/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
+            // 로컬 저장소에 올린 굿즈 이미지. <img src="/uploads/..."> 는 토큰을 붙일 수 없어서
+            // 여기에 없으면 전부 401 이 됩니다. 배포는 S3 라 이 경로 자체가 없습니다.
+            "/uploads/**",
+    };
+
+    /**
+     * 인증 없이 <b>GET 만</b> 허용할 경로.
+     *
+     * <p>위 {@link #PUBLIC_ENDPOINTS} 와 나눠 둔 이유는, 전시 상세와 수정·삭제가
+     * <b>같은 경로</b>({@code /api/exhibitions/{id}})를 쓰기 때문입니다. 경로만으로 열면
+     * 아무나 남의 장식장을 지울 수 있게 됩니다.
+     *
+     * <p>id 를 숫자로 제한한 것도 의도입니다. {@code /api/exhibitions/*} 로 두면 나중에
+     * 누군가 {@code /api/exhibitions/mine} 같은 걸 추가했을 때 조용히 공개됩니다.
+     */
+    private static final String[] PUBLIC_GET_ENDPOINTS = {
+            "/api/exhibitions/popular",
+            "/api/exhibitions/{exhibitionId:[0-9]+}",
+            "/api/search/exhibitions",
     };
 
     @Bean
@@ -55,6 +78,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()   // CORS preflight
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS).permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
 

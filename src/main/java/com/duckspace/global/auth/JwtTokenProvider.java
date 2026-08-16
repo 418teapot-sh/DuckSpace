@@ -17,6 +17,7 @@ import java.util.Date;
 public class JwtTokenProvider {
 
     private static final String TOKEN_TYPE_CLAIM = "type";
+    private static final String ROLE_CLAIM = "role";
     private static final String ACCESS_TOKEN = "access";
     private static final String REFRESH_TOKEN = "refresh";
 
@@ -30,8 +31,18 @@ public class JwtTokenProvider {
         this.refreshTokenValidity = properties.refreshTokenValidity();
     }
 
-    public String createAccessToken(Long userId) {
-        return createToken(userId, ACCESS_TOKEN, accessTokenValidity);
+    public String createAccessToken(Long userId, Role role) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + accessTokenValidity);
+
+        return Jwts.builder()
+                .subject(String.valueOf(userId))
+                .claim(TOKEN_TYPE_CLAIM, ACCESS_TOKEN)
+                .claim(ROLE_CLAIM, role.name())
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(key)
+                .compact();
     }
 
     public String createRefreshToken(Long userId) {
@@ -53,6 +64,15 @@ public class JwtTokenProvider {
 
     public Long getUserId(String token) {
         return Long.valueOf(parseClaims(token).getSubject());
+    }
+
+    /**
+     * 액세스 토큰에만 들어있는 claim 입니다. 리프레시 토큰에는 role 이 없습니다.
+     * role 배포 이전에 발급된 기존 액세스 토큰에는 claim 자체가 없을 수 있어 USER 로 폴백합니다.
+     */
+    public Role getRole(String token) {
+        String role = parseClaims(token).get(ROLE_CLAIM, String.class);
+        return role == null ? Role.USER : Role.valueOf(role);
     }
 
     public boolean isAccessToken(String token) {
