@@ -45,18 +45,23 @@ public class ChatController {
         return ApiResponse.success(chatService.getMyRooms(authUser.getUserId()));
     }
 
-    @Operation(summary = "메시지 조회 (폴링)",
+    @Operation(summary = "메시지 조회 (폴링 · 지난 대화)",
             description = """
-                    after 를 비우면 최근 메시지를 내려주고(최초 진입), 값을 주면 그 이후 메시지만 내려줍니다(폴링).
-                    프론트는 마지막으로 받은 messageId 를 after 에 넣어 3초 간격으로 호출하면 됩니다.
-                    조회한 지점까지 자동으로 읽음 처리됩니다.
+                    응답은 항상 오래된 순입니다. 커서에 따라 세 방향으로 동작합니다.
+                    - 둘 다 비움: 최근 메시지 (최초 진입)
+                    - after: 그 messageId 이후만 (폴링 — 마지막으로 받은 id 를 넣어 3초 간격 호출)
+                    - before: 그 messageId 이전만 (위로 스크롤 — 화면에 있는 가장 오래된 id 를 넣으세요)
+                    after 와 before 를 같이 주면 400 입니다.
+                    읽음 처리는 최초 진입·폴링에서만 됩니다. before 조회로 응답이 size 보다 짧게 오면
+                    더 이상 지난 대화가 없다는 뜻입니다.
                     """)
     @GetMapping("/rooms/{roomId}/messages")
     public ApiResponse<List<ChatMessageResponse>> getMessages(@AuthenticationPrincipal AuthUser authUser,
                                                                @PathVariable Long roomId,
                                                                @RequestParam(required = false) Long after,
+                                                               @RequestParam(required = false) Long before,
                                                                @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(chatService.getMessages(authUser.getUserId(), roomId, after, size));
+        return ApiResponse.success(chatService.getMessages(authUser.getUserId(), roomId, after, before, size));
     }
 
     @Operation(summary = "메시지 전송")

@@ -91,6 +91,36 @@ class ChatMessageRepositoryTest {
     }
 
     @Test
+    @DisplayName("지난 대화 조회는 커서 이전 메시지만, 커서에 가까운 쪽부터 가져온다")
+    void 커서_이전_메시지만_내림차순으로_가져온다() {
+        ChatRoom room = persistRoom(1L, 2L);
+        ChatMessage first = persistMessage(room, 1L, "하나");
+        ChatMessage second = persistMessage(room, 2L, "둘");
+        ChatMessage third = persistMessage(room, 1L, "셋");
+        entityManager.flush();
+
+        List<ChatMessage> messages = chatMessageRepository.findByRoomIdAndIdLessThanOrderByIdDesc(
+                room.getId(), third.getId(), PageRequest.of(0, 50));
+
+        // 커서 자신(셋)은 빠져야 합니다. 포함되면 프론트가 같은 메시지를 두 번 그립니다.
+        assertThat(messages)
+                .extracting(ChatMessage::getId)
+                .containsExactly(second.getId(), first.getId());
+    }
+
+    @Test
+    @DisplayName("가장 오래된 메시지를 커서로 주면 빈 목록이다 (지난 대화 끝)")
+    void 지난_대화의_끝은_빈_목록() {
+        ChatRoom room = persistRoom(1L, 2L);
+        ChatMessage first = persistMessage(room, 1L, "하나");
+        persistMessage(room, 2L, "둘");
+        entityManager.flush();
+
+        assertThat(chatMessageRepository.findByRoomIdAndIdLessThanOrderByIdDesc(
+                room.getId(), first.getId(), PageRequest.of(0, 50))).isEmpty();
+    }
+
+    @Test
     @DisplayName("최초 진입 조회는 최신 메시지부터 가져온다")
     void 최초_진입은_최신순으로_가져온다() {
         ChatRoom room = persistRoom(1L, 2L);
