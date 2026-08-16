@@ -72,12 +72,25 @@ class FollowServiceTest {
         void 동시_요청으로_DB_유니크_제약조건이_위반되면_성공으로_처리한다() {
             given(userRepository.findById(1L)).willReturn(Optional.of(user(1L)));
             given(userRepository.findById(2L)).willReturn(Optional.of(user(2L)));
-            given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(false);
+            given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(false, true);
             doThrow(new DataIntegrityViolationException("duplicate")).when(followWriter).insert(any(), any());
 
             followService.follow(1L, 2L);
 
             verify(followWriter).insert(any(), any());
+        }
+
+        @Test
+        void FK_제약조건_위반이면_예외() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(user(1L)));
+            given(userRepository.findById(2L)).willReturn(Optional.of(user(2L)));
+            given(followRepository.existsByFollowerIdAndFollowingId(1L, 2L)).willReturn(false, false);
+            doThrow(new DataIntegrityViolationException("FK violation")).when(followWriter).insert(any(), any());
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> followService.follow(1L, 2L));
+
+            assertThat(exception.getErrorCode()).isEqualTo(UserErrorCode.USER_NOT_FOUND);
         }
 
         @Test
