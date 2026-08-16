@@ -542,6 +542,43 @@ class ExhibitionItemServiceTest {
         }
 
         @Test
+        void 오래_방치된_PENDING은_재시도를_허용한다() {
+            // 강제 종료(OOM 등)로 처리가 끊기면 PENDING 이 영원히 남는데,
+            // FAILED 만 재시도를 받으면 사용자가 복구할 방법이 없습니다.
+            ExhibitionItem stuck = new ExhibitionItem(
+                    exhibition, new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3),
+                    "https://cdn/origin.png", "굿즈", null, null, ItemStatus.PENDING);
+            ReflectionTestUtils.setField(stuck, "id", 5L);
+            ReflectionTestUtils.setField(stuck, "updatedAt", java.time.LocalDateTime.now().minusMinutes(20));
+
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(stuck));
+
+            ExhibitionItemResponse response = exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
+
+            assertThat(response.status()).isEqualTo(ItemStatus.PENDING);
+            verify(eventPublisher).publishEvent(any(ItemImageRetryRequestedEvent.class));
+        }
+
+        @Test
+        void 갓_접수된_PENDING은_여전히_거부한다() {
+            // 방금 올린 건 아직 처리 중일 뿐입니다. 여기가 뚫리면 재시도 락의 의미가 없어집니다.
+            ExhibitionItem processing = new ExhibitionItem(
+                    exhibition, new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3),
+                    "https://cdn/origin.png", "굿즈", null, null, ItemStatus.PENDING);
+            ReflectionTestUtils.setField(processing, "id", 5L);
+            ReflectionTestUtils.setField(processing, "updatedAt", java.time.LocalDateTime.now());
+
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(processing));
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.ITEM_NOT_RETRYABLE);
+        }
+
+        @Test
         void 실패한_굿즈가_아니면_거부한다() {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(item(5L)));   // READY

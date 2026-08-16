@@ -55,8 +55,9 @@ class ExhibitionItemStatusWriterTest {
         ExhibitionItem item = itemWith(ItemStatus.PENDING, null);
         given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
 
-        statusWriter.markReady(ITEM_ID, "https://cdn/result.png");
+        boolean written = statusWriter.markReady(ITEM_ID, "https://cdn/result.png");
 
+        assertThat(written).isTrue();
         assertThat(item.getStatus()).isEqualTo(ItemStatus.READY);
         assertThat(item.getImageUrl()).isEqualTo("https://cdn/result.png");
     }
@@ -69,8 +70,11 @@ class ExhibitionItemStatusWriterTest {
         ExhibitionItem item = itemWith(ItemStatus.READY, "https://cdn/result.png");
         given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
 
-        statusWriter.markFailed(ITEM_ID, "https://cdn/deleted-origin.png");
+        boolean written = statusWriter.markFailed(ITEM_ID, "https://cdn/deleted-origin.png");
 
+        assertThat(written)
+                .as("기록하지 못했다는 신호가 있어야 호출부가 방금 올린 객체를 회수할 수 있습니다")
+                .isFalse();
         assertThat(item.getStatus())
                 .as("이미 화면에 잘 뜨는 굿즈가 FAILED 로 되돌아가면 안 됩니다")
                 .isEqualTo(ItemStatus.READY);
@@ -85,8 +89,7 @@ class ExhibitionItemStatusWriterTest {
         ExhibitionItem item = itemWith(ItemStatus.FAILED, "https://cdn/origin.png");
         given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
 
-        statusWriter.markReady(ITEM_ID, "https://cdn/late.png");
-
+        assertThat(statusWriter.markReady(ITEM_ID, "https://cdn/late.png")).isFalse();
         assertThat(item.getStatus()).isEqualTo(ItemStatus.FAILED);
     }
 
@@ -95,6 +98,6 @@ class ExhibitionItemStatusWriterTest {
     void 아이템이_없으면_아무것도_하지_않는다() {
         given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.empty());
 
-        statusWriter.markReady(ITEM_ID, "https://cdn/result.png");   // 예외 없음
+        assertThat(statusWriter.markReady(ITEM_ID, "https://cdn/result.png")).isFalse();   // 예외 없음
     }
 }
