@@ -23,3 +23,10 @@ jwt:
 cors:
   # 배포 시 CORS_ALLOWED_ORIGINS로 덮어쓰세요. 와일드카드(*) 사용 가능.
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://*.vercel.app}
+
+openai:
+  # JWT_SECRET과 달리 빈 값이 보안 문제가 되지 않고, 키 없는 팀원도 나머지 기능을
+  # 개발할 수 있어야 해서 부팅을 막지 않습니다. 키가 없으면 BannerSummaryClient가
+  # 요약 호출에 실패하고 null로 폴백합니다(배너 등록 자체는 막지 않음).
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
