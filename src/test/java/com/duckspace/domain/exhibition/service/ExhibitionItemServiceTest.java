@@ -196,6 +196,44 @@ class ExhibitionItemServiceTest {
         }
 
         @Test
+        void 회전을_안_보내면_기존_각도를_지운다_가_아니라_유지한다() {
+            // 회전 UI 가 없는 화면은 현재 각도를 몰라서 같이 보낼 수가 없습니다.
+            // 그런 화면이 드래그만 해도 사용자가 돌려둔 각도가 사라지면 안 됩니다.
+            ExhibitionItem target = item(5L);
+            target.moveTo(new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3, 45.0));
+
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+
+            ExhibitionItemResponse response = exhibitionItemService.updatePosition(
+                    EXHIBITION_ID, 5L, OWNER,
+                    new UpdatePositionRequest(new PlacementRequest(0.8, 0.9, 0.15, 0.15, null)));
+
+            assertThat(response.rotation())
+                    .as("회전을 생략한 요청이 기존 각도를 0 으로 덮으면 안 됩니다")
+                    .isEqualTo(45.0);
+            assertThat(response.posX())
+                    .as("위치·크기는 보낸 값으로 갱신되어야 합니다")
+                    .isEqualTo(0.8);
+        }
+
+        @Test
+        void 회전을_0으로_보내면_실제로_0이_된다() {
+            // "생략" 과 "0 으로 지정" 은 다릅니다. 회전을 되돌리는 것도 가능해야 합니다.
+            ExhibitionItem target = item(5L);
+            target.moveTo(new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3, 45.0));
+
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+
+            ExhibitionItemResponse response = exhibitionItemService.updatePosition(
+                    EXHIBITION_ID, 5L, OWNER,
+                    new UpdatePositionRequest(new PlacementRequest(0.1, 0.2, 0.3, 0.3, 0.0)));
+
+            assertThat(response.rotation()).isEqualTo(0.0);
+        }
+
+        @Test
         void 다른_장식장의_굿즈는_옮길_수_없다() {
             Exhibition other = new Exhibition(OWNER, "다른 장식장", null);
             ReflectionTestUtils.setField(other, "id", 77L);

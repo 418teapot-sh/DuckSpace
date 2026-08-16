@@ -122,7 +122,7 @@ public class ExhibitionController {
             description = """
                     자유 배치입니다. placement 의 좌표·크기는 배경 대비 비율(0.0~1.0)입니다.
                     rotation 은 회전 각도(도)로 -180~180 이며, 0 이 기본이고 양수가 시계 방향입니다.
-                    **rotation 은 선택 항목이라 안 보내면 0 으로 저장됩니다.**
+                    **처음 놓을 때 rotation 을 안 보내면 0(회전 없음)으로 저장됩니다.**
                     위치가 겹쳐도 막지 않습니다. 현재는 imageUrl 을 직접 받습니다.
                     """)
     @PostMapping("/{exhibitionId}/items")
@@ -182,7 +182,9 @@ public class ExhibitionController {
     @Operation(summary = "굿즈 위치·크기 저장",
             description = """
                     드래그로 옮기거나 크기를 조절하거나 회전한 결과를 저장합니다. 본인 장식장만 가능합니다.
-                    **회전만 바꿀 때도 placement 를 통째로 보내세요.** 부분 수정이 아니라 통째 교체입니다.
+                    posX/posY/width/height 는 필수라 보낸 값으로 통째 교체됩니다.
+                    **rotation 만 예외로, 생략하면 기존 각도를 그대로 둡니다.**
+                    회전을 되돌리려면 0 을 명시적으로 보내세요(생략과 0 은 다릅니다).
                     """)
     @PatchMapping("/{exhibitionId}/items/{itemId}/position")
     public ApiResponse<ExhibitionItemResponse> updateItemPosition(

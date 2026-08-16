@@ -47,13 +47,15 @@ class PlacementRequestTest {
     }
 
     @Test
-    @DisplayName("회전을 생략하면 통과하고 0 으로 저장된다")
-    void 생략하면_0() {
+    @DisplayName("회전을 생략하면 검증은 통과하고 \"지정하지 않음\"(null)으로 넘어간다")
+    void 생략하면_지정하지_않음() {
         PlacementRequest request = withRotation(null);
 
         assertThat(VALIDATOR.validate(request))
                 .as("회전은 선택 항목이라 안 보내도 400 이 나면 안 됩니다")
                 .isEmpty();
-        assertThat(request.toPlacement().rotation()).isEqualTo(0.0);
+        assertThat(request.toPlacement().rotation())
+                .as("여기서 0 으로 바꿔버리면 생성(=0)과 수정(=기존 유지)을 구분할 수 없습니다")
+                .isNull();
     }
 }

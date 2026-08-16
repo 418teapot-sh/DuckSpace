@@ -111,6 +111,8 @@ public class ExhibitionItem extends BaseTimeEntity {
                           String itemName, Integer price, String comment, ItemStatus status) {
         this.exhibition = exhibition;
         applyPlacement(placement);
+        // 처음 놓을 때 회전을 안 보내면 "회전 없음" 입니다. 아직 지킬 이전 값이 없습니다.
+        this.rotation = (placement.rotation() == null) ? NO_ROTATION : placement.rotation();
         this.imageUrl = imageUrl;
         this.itemName = itemName;
         this.price = price;
@@ -122,35 +124,42 @@ public class ExhibitionItem extends BaseTimeEntity {
         return exhibition.getId().equals(exhibitionId);
     }
 
-    /** 드래그 이동·크기 조절 결과를 반영합니다. */
+    /**
+     * 드래그 이동·크기 조절·회전 결과를 반영합니다.
+     *
+     * <p><b>회전은 안 보내면 그대로 둡니다.</b> 위치·크기와 다르게 다루는 이유가 있습니다 —
+     * 회전 UI 가 없는 화면은 <b>현재 각도를 알 수도 없어서</b> 같이 보낼 수가 없습니다.
+     * 그런 화면이 단순 드래그만 해도 사용자가 돌려둔 각도가 0 으로 지워지면 안 됩니다.
+     *
+     * <p>위치·크기는 {@code @NotNull} 이라 항상 넘어오므로 이런 문제가 없습니다.
+     */
     public void moveTo(Placement placement) {
         applyPlacement(placement);
+        if (placement.rotation() != null) {
+            this.rotation = placement.rotation();
+        }
     }
 
+    /** 위치와 크기만 반영합니다. 회전은 생성·수정에서 규칙이 달라 각자 처리합니다. */
     private void applyPlacement(Placement placement) {
         this.posX = placement.posX();
         this.posY = placement.posY();
         this.width = placement.width();
         this.height = placement.height();
-        this.rotation = placement.rotation();
     }
 
     /**
      * 배치 정보. 위치·크기는 <b>배경 대비 비율</b>, 회전은 <b>도(degree)</b> 입니다.
      *
-     * @param rotation {@code -180 ~ 180}. 0 이 기본, 양수가 시계 방향입니다.
+     * @param rotation {@code -180 ~ 180}, 양수가 시계 방향입니다.
+     *                 <b>{@code null} 은 "지정하지 않음"</b>이라 생성에서는 0, 수정에서는
+     *                 기존 값 유지로 갈립니다. 여기서 0 으로 바꿔버리면 그 구분이 사라집니다.
      */
     public record Placement(Double posX, Double posY, Double width, Double height, Double rotation) {
 
-        /** 회전이 필요 없을 때. 회전 기능이 생기기 전에 만들어진 호출부가 그대로 동작합니다. */
+        /** 회전을 명시적으로 "없음(0)" 으로 두는 편의 생성자. */
         public Placement(Double posX, Double posY, Double width, Double height) {
             this(posX, posY, width, height, NO_ROTATION);
-        }
-
-        public Placement {
-            // null 을 그대로 두면 not null 컬럼에서 저장이 실패합니다.
-            // 회전은 선택값이라 안 보내는 프론트가 있을 수 있습니다.
-            rotation = (rotation == null) ? NO_ROTATION : rotation;
         }
     }
 
