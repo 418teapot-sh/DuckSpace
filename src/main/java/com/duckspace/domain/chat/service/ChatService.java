@@ -87,25 +87,47 @@ public class ChatService {
     }
 
     /**
-     * 메시지 조회. 조회한 지점까지 읽음으로 표시합니다.
+     * 메시지 조회. 세 가지 방향이 있고 응답은 <b>항상 오래된 순(오름차순)</b>입니다.
      *
-     * @param afterId null 이면 최근 메시지부터(최초 진입), 값이 있으면 그 이후 메시지만(폴링)
+     * <ul>
+     *   <li>둘 다 없음 — 최근 메시지부터 (최초 진입)</li>
+     *   <li>{@code afterId} — 그 이후 메시지만 (폴링)</li>
+     *   <li>{@code beforeId} — 그 이전 메시지만 (지난 대화 위로 스크롤)</li>
+     * </ul>
+     *
+     * <p>둘을 함께 주면 400 입니다. "그 사이" 라는 뜻이 아니라서 조용히 한쪽을 고르면
+     * 프론트 버그가 티 안 나게 묻힙니다.
+     *
+     * <p>읽음 표시는 최초 진입·폴링에서만 합니다. 지난 대화는 이미 읽은 지점보다 과거라
+     * 읽음 위치가 움직일 일이 없습니다(전진 전용 UPDATE 라 호출해도 no-op 이지만, 쿼리 낭비라 뺍니다).
      */
     @Transactional
-    public List<ChatMessageResponse> getMessages(Long myId, Long roomId, Long afterId, Integer size) {
+    public List<ChatMessageResponse> getMessages(Long myId, Long roomId, Long afterId, Long beforeId, Integer size) {
+        if (afterId != null && beforeId != null) {
+            throw new BusinessException(ChatErrorCode.CONFLICTING_CURSORS);
+        }
         ChatRoom room = getRoomAsParticipant(roomId, myId);
         Pageable pageable = PageRequest.of(0, normalizeSize(size));
 
         List<ChatMessage> messages;
-        if (afterId == null) {
+        boolean advanceRead;
+        if (afterId != null) {
+            messages = chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(roomId, afterId, pageable);
+            advanceRead = true;
+        } else if (beforeId != null) {
+            // 위로 스크롤이므로 커서 바로 위(최신 쪽)부터 가져와서 오름차순으로 뒤집습니다.
+            messages = new ArrayList<>(
+                    chatMessageRepository.findByRoomIdAndIdLessThanOrderByIdDesc(roomId, beforeId, pageable));
+            Collections.reverse(messages);
+            advanceRead = false;
+        } else {
             // 리포지토리가 최신순으로 주므로 뒤집기만 하면 됩니다. (이미 정렬된 리스트라 재정렬 불필요)
             messages = new ArrayList<>(chatMessageRepository.findByRoomIdOrderByIdDesc(roomId, pageable));
             Collections.reverse(messages);
-        } else {
-            messages = chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(roomId, afterId, pageable);
+            advanceRead = true;
         }
 
-        if (!messages.isEmpty()) {
+        if (advanceRead && !messages.isEmpty()) {
             markRead(room, myId, messages.get(messages.size() - 1).getId());
         }
 

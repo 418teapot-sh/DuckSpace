@@ -178,7 +178,7 @@ class ChatServiceTest {
             given(chatMessageRepository.findByRoomIdOrderByIdDesc(eq(ROOM_ID), any(Pageable.class)))
                     .willReturn(List.of(message(3L, PARTNER, "셋"), message(2L, ME, "둘"), message(1L, PARTNER, "하나")));
 
-            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, null, null);
+            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, null, null, null);
 
             assertThat(messages).extracting(ChatMessageResponse::messageId).containsExactly(1L, 2L, 3L);
             assertThat(messages).extracting(ChatMessageResponse::content).containsExactly("하나", "둘", "셋");
@@ -190,7 +190,7 @@ class ChatServiceTest {
             given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(2L), any(Pageable.class)))
                     .willReturn(List.of(message(3L, PARTNER, "셋")));
 
-            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, 2L, null);
+            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, 2L, null, null);
 
             assertThat(messages).hasSize(1);
             assertThat(messages.get(0).messageId()).isEqualTo(3L);
@@ -203,7 +203,7 @@ class ChatServiceTest {
             given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(0L), any(Pageable.class)))
                     .willReturn(List.of(message(1L, ME, "내 메시지"), message(2L, PARTNER, "상대 메시지")));
 
-            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, 0L, null);
+            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, 0L, null, null);
 
             assertThat(messages).extracting(ChatMessageResponse::mine).containsExactly(true, false);
         }
@@ -214,7 +214,7 @@ class ChatServiceTest {
             given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(0L), any(Pageable.class)))
                     .willReturn(List.of(message(1L, PARTNER, "하나"), message(5L, PARTNER, "다섯")));
 
-            chatService.getMessages(ME, ROOM_ID, 0L, null);
+            chatService.getMessages(ME, ROOM_ID, 0L, null, null);
 
             // ME 는 userA 이므로 A 쪽 읽음 위치가 갱신되어야 합니다.
             verify(chatRoomRepository).markReadForUserA(ROOM_ID, 5L);
@@ -227,7 +227,7 @@ class ChatServiceTest {
             given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(0L), any(Pageable.class)))
                     .willReturn(List.of(message(5L, ME, "다섯")));
 
-            chatService.getMessages(PARTNER, ROOM_ID, 0L, null);
+            chatService.getMessages(PARTNER, ROOM_ID, 0L, null, null);
 
             verify(chatRoomRepository).markReadForUserB(ROOM_ID, 5L);
             verify(chatRoomRepository, never()).markReadForUserA(anyLong(), anyLong());
@@ -239,8 +239,42 @@ class ChatServiceTest {
             given(chatMessageRepository.findByRoomIdAndIdGreaterThanOrderByIdAsc(eq(ROOM_ID), eq(9L), any(Pageable.class)))
                     .willReturn(List.of());
 
-            assertThat(chatService.getMessages(ME, ROOM_ID, 9L, null)).isEmpty();
+            assertThat(chatService.getMessages(ME, ROOM_ID, 9L, null, null)).isEmpty();
             verify(chatRoomRepository, never()).markReadForUserA(anyLong(), anyLong());
+        }
+
+        @Test
+        void before가_있으면_그_이전_메시지를_오래된_순으로_돌려준다() {
+            given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
+            // 위로 스크롤이므로 리포지토리는 커서 바로 위(최신 쪽)부터 주고, 서비스가 뒤집어야 합니다.
+            given(chatMessageRepository.findByRoomIdAndIdLessThanOrderByIdDesc(eq(ROOM_ID), eq(5L), any(Pageable.class)))
+                    .willReturn(List.of(message(4L, PARTNER, "넷"), message(3L, ME, "셋")));
+
+            List<ChatMessageResponse> messages = chatService.getMessages(ME, ROOM_ID, null, 5L, null);
+
+            assertThat(messages).extracting(ChatMessageResponse::messageId).containsExactly(3L, 4L);
+        }
+
+        @Test
+        void 지난_대화_조회는_읽음_처리를_하지_않는다() {
+            // 이미 읽은 지점보다 과거라 읽음 위치가 움직일 일이 없습니다. 쿼리 낭비를 막습니다.
+            given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
+            given(chatMessageRepository.findByRoomIdAndIdLessThanOrderByIdDesc(eq(ROOM_ID), eq(5L), any(Pageable.class)))
+                    .willReturn(List.of(message(4L, PARTNER, "넷")));
+
+            chatService.getMessages(ME, ROOM_ID, null, 5L, null);
+
+            verify(chatRoomRepository, never()).markReadForUserA(anyLong(), anyLong());
+            verify(chatRoomRepository, never()).markReadForUserB(anyLong(), anyLong());
+        }
+
+        @Test
+        void after와_before를_같이_주면_거부한다() {
+            // "그 사이" 라는 뜻이 아니라서, 조용히 한쪽을 고르면 프론트 버그가 묻힙니다.
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> chatService.getMessages(ME, ROOM_ID, 3L, 5L, null));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ChatErrorCode.CONFLICTING_CURSORS);
         }
 
         @Test
@@ -248,7 +282,7 @@ class ChatServiceTest {
             given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> chatService.getMessages(STRANGER, ROOM_ID, null, null));
+                    () -> chatService.getMessages(STRANGER, ROOM_ID, null, null, null));
 
             assertThat(exception.getErrorCode()).isEqualTo(ChatErrorCode.NOT_ROOM_PARTICIPANT);
         }
@@ -258,7 +292,7 @@ class ChatServiceTest {
             given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.empty());
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> chatService.getMessages(ME, ROOM_ID, null, null));
+                    () -> chatService.getMessages(ME, ROOM_ID, null, null, null));
 
             assertThat(exception.getErrorCode()).isEqualTo(ChatErrorCode.ROOM_NOT_FOUND);
         }
