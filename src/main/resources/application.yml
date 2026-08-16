@@ -22,7 +22,7 @@ jwt:
   # 기본값을 두지 않습니다. dev/prod에서 JWT_SECRET 을 빠뜨리면
   # 조용히 공개된 값으로 동작하는 대신 부팅이 실패하도록 합니다. (local 값은 application-local.yml)
   secret: ${JWT_SECRET}
-  access-token-validity: 10000  # 10초 (ms) — 프론트 재발급 테스트용 임시값, 테스트 끝나면 30분(1800000)으로 되돌릴 것
+  access-token-validity: 1800000      # 30분 (ms)
   refresh-token-validity: 1209600000  # 14일 (ms)
 
 cors:
