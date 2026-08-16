@@ -8,6 +8,7 @@ import com.duckspace.global.auth.JwtAccessDeniedHandler;
 import com.duckspace.global.auth.JwtAuthenticationEntryPoint;
 import com.duckspace.global.auth.JwtAuthenticationFilter;
 import com.duckspace.global.auth.JwtTokenProvider;
+import com.duckspace.global.auth.Role;
 import com.duckspace.global.config.CorsConfig;
 import com.duckspace.global.config.SecurityConfig;
 import org.junit.jupiter.api.Test;
@@ -48,7 +49,7 @@ class ExchangeApplicationControllerTest {
         ExchangeApplicationRequest request = new ExchangeApplicationRequest(" ", null, null, null, null);
 
         mockMvc.perform(post("/api/posts/exchange/1/applications")
-                        .with(user(new AuthUser(1L)))
+                        .with(user(new AuthUser(1L, Role.USER)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -71,7 +72,7 @@ class ExchangeApplicationControllerTest {
         ExchangeApplicationRequest request = new ExchangeApplicationRequest("인형", null, null, null, tooLongMessage);
 
         mockMvc.perform(post("/api/posts/exchange/1/applications")
-                        .with(user(new AuthUser(1L)))
+                        .with(user(new AuthUser(1L, Role.USER)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
