@@ -40,6 +40,7 @@ public interface ExchangeApplicationRepository extends JpaRepository<ExchangeApp
             select ea from ExchangeApplication ea
             join Post p on p.id = ea.postId
             where p.userId = :userId
+              and p.deletedAt is null
               and (:cursor is null or ea.id < :cursor)
             order by ea.id desc
             """)

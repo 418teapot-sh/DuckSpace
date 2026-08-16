@@ -65,6 +65,8 @@ class ExchangeApplicationServiceTest {
     private PostLikeRepository postLikeRepository;
     @Mock
     private CommentRepository commentRepository;
+    @Mock
+    private ExchangeApplicationWriter exchangeApplicationWriter;
 
     private ExchangeApplicationService exchangeApplicationService;
 
@@ -73,9 +75,9 @@ class ExchangeApplicationServiceTest {
     void setUp() {
         PostService postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
                 exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
-                postLikeRepository, commentRepository, userRepository);
-        exchangeApplicationService = new ExchangeApplicationService(
-                exchangeApplicationRepository, exchangeDetailRepository, postRepository, userRepository, postService);
+                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter);
+        exchangeApplicationService = new ExchangeApplicationService(exchangeApplicationRepository,
+                exchangeDetailRepository, postRepository, userRepository, postService, exchangeApplicationWriter);
     }
 
     private Post exchangePost(Long id, Long userId) {
@@ -271,6 +273,7 @@ class ExchangeApplicationServiceTest {
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
             given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.APPLIED);
 
             exchangeApplicationService.accept(100L, 10L);
 
@@ -312,7 +315,8 @@ class ExchangeApplicationServiceTest {
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
             given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
-            given(exchangeApplicationRepository.existsByPostIdAndStatusIn(any(), any())).willReturn(true);
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.APPLIED);
+            given(exchangeApplicationWriter.existsAcceptedOrCompleted(1L)).willReturn(true);
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exchangeApplicationService.accept(100L, 10L));
@@ -329,9 +333,12 @@ class ExchangeApplicationServiceTest {
         @Test
         void 글쓴이면_거절된다() {
             Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.APPLIED);
 
             exchangeApplicationService.reject(100L, 10L);
 
@@ -341,10 +348,13 @@ class ExchangeApplicationServiceTest {
         @Test
         void 수락된_신청도_거절해서_되돌릴_수_있다() {
             Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             app.accept();
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.ACCEPTED);
 
             exchangeApplicationService.reject(100L, 10L);
 
@@ -391,7 +401,9 @@ class ExchangeApplicationServiceTest {
             ExchangeApplication app = application(100L, 1L, 20L);
             app.accept();
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
-            given(exchangeDetailRepository.findWithPostByPostId(1L)).willReturn(Optional.of(detail));
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.ACCEPTED);
 
             exchangeApplicationService.complete(100L, 10L);
 
@@ -405,7 +417,9 @@ class ExchangeApplicationServiceTest {
             ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
-            given(exchangeDetailRepository.findWithPostByPostId(1L)).willReturn(Optional.of(detail));
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.APPLIED);
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exchangeApplicationService.complete(100L, 10L));
@@ -416,11 +430,10 @@ class ExchangeApplicationServiceTest {
         @Test
         void 신청자는_완료_처리할_수_없다() {
             Post post = exchangePost(1L, 10L);
-            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             app.accept();
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
-            given(exchangeDetailRepository.findWithPostByPostId(1L)).willReturn(Optional.of(detail));
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exchangeApplicationService.complete(100L, 20L));
@@ -436,7 +449,8 @@ class ExchangeApplicationServiceTest {
             ExchangeApplication app = application(100L, 1L, 20L);
             app.accept();
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
-            given(exchangeDetailRepository.findWithPostByPostId(1L)).willReturn(Optional.of(detail));
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exchangeApplicationService.complete(100L, 10L));
@@ -452,8 +466,12 @@ class ExchangeApplicationServiceTest {
 
         @Test
         void 신청자_본인이면_취소된다() {
+            Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.APPLIED);
 
             exchangeApplicationService.cancel(100L, 20L);
 
@@ -462,9 +480,13 @@ class ExchangeApplicationServiceTest {
 
         @Test
         void 수락된_신청도_취소할_수_있다() {
+            Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             app.accept();
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.currentStatus(100L)).willReturn(ExchangeApplicationStatus.ACCEPTED);
 
             exchangeApplicationService.cancel(100L, 20L);
 

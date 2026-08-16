@@ -65,6 +65,8 @@ class PostServiceTest {
     private CommentRepository commentRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private ExchangeApplicationWriter exchangeApplicationWriter;
 
     private PostService postService;
 
@@ -72,7 +74,7 @@ class PostServiceTest {
     void setUp() {
         postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
                 exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
-                postLikeRepository, commentRepository, userRepository);
+                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter);
     }
 
     private Post casualPost(Long id, Long userId) {
@@ -364,7 +366,7 @@ class PostServiceTest {
             Post post = exchangePost(1L, 10L);
             ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             postService.completeExchange(1L, 10L);
 
@@ -378,14 +380,14 @@ class PostServiceTest {
             ExchangeApplication application = new ExchangeApplication(1L, 20L, "인형", null, null, null, null);
             application.accept();
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
-            given(exchangeApplicationRepository.findByPostIdAndStatus(1L, ExchangeApplicationStatus.ACCEPTED))
-                    .willReturn(Optional.of(application));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationWriter.findAcceptedByPostId(1L)).willReturn(Optional.of(application));
 
             postService.completeExchange(1L, 10L);
 
             assertThat(detail.isCompleted()).isTrue();
             assertThat(application.getStatus()).isEqualTo(ExchangeApplicationStatus.COMPLETED);
+            verify(exchangeApplicationRepository).save(application);
         }
 
         @Test
@@ -394,7 +396,7 @@ class PostServiceTest {
             ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             detail.complete();
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> postService.completeExchange(1L, 10L));

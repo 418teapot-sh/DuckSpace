@@ -8,8 +8,6 @@ import com.duckspace.domain.post.dto.response.CasualPostSummaryResponse;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
 import com.duckspace.domain.post.entity.BoardType;
-import com.duckspace.domain.post.entity.ExchangeApplication;
-import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
 import com.duckspace.domain.post.entity.ExchangeDetail;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.entity.PostHashtag;
@@ -29,6 +27,7 @@ import com.duckspace.domain.post.repository.TradeItemRepository;
 import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
+import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -57,6 +56,7 @@ public class PostService {
     private final PostLikeRepository postLikeRepository;
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
+    private final ExchangeApplicationWriter exchangeApplicationWriter;
 
     @Transactional
     public Long createCasual(Long userId, CasualPostRequest request) {
@@ -227,15 +227,18 @@ public class PostService {
         Post post = getOwnedPost(postId, userId);
         requireBoardType(post, BoardType.EXCHANGE);
 
-        ExchangeDetail detail = exchangeDetailRepository.findById(postId)
+        ExchangeDetail detail = exchangeDetailRepository.findByPostIdForUpdate(postId)
                 .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
         if (detail.isCompleted()) {
             throw new BusinessException(PostErrorCode.EXCHANGE_ALREADY_COMPLETED);
         }
         detail.complete();
 
-        exchangeApplicationRepository.findByPostIdAndStatus(postId, ExchangeApplicationStatus.ACCEPTED)
-                .ifPresent(ExchangeApplication::complete);
+        exchangeApplicationWriter.findAcceptedByPostId(postId)
+                .ifPresent(application -> {
+                    application.complete();
+                    exchangeApplicationRepository.save(application);
+                });
     }
 
     Post getPost(Long postId) {
@@ -327,13 +330,6 @@ public class PostService {
     }
 
     private Pageable pageable(Integer size) {
-        return PageRequest.of(0, normalizeSize(size));
-    }
-
-    private int normalizeSize(Integer size) {
-        if (size == null || size <= 0) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(size, MAX_PAGE_SIZE);
+        return PageRequest.of(0, Paging.normalize(size, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE));
     }
 }

@@ -39,9 +39,6 @@ import java.util.Map;
 @Transactional(readOnly = true)
 public class ExchangeApplicationService {
 
-    private static final EnumSet<ExchangeApplicationStatus> IN_PROGRESS_OR_DONE =
-            EnumSet.of(ExchangeApplicationStatus.ACCEPTED, ExchangeApplicationStatus.COMPLETED);
-
     /** apply()에서 이미 진행 중인 신청이 있는지 확인할 때 씁니다. COMPLETED는 detail.isCompleted()가 먼저 막아서 여기 안 옵니다. */
     private static final EnumSet<ExchangeApplicationStatus> ACTIVE_APPLICATION =
             EnumSet.of(ExchangeApplicationStatus.APPLIED, ExchangeApplicationStatus.ACCEPTED);
@@ -54,6 +51,7 @@ public class ExchangeApplicationService {
     private final PostRepository postRepository;
     private final UserRepository userRepository;
     private final PostService postService;
+    private final ExchangeApplicationWriter exchangeApplicationWriter;
 
     @Transactional
     public Long apply(Long userId, Long postId, ExchangeApplicationRequest request) {
@@ -111,13 +109,21 @@ public class ExchangeApplicationService {
                 .toList();
     }
 
-    /** 글쓴이만 가능. 같은 게시글에 이미 ACCEPTED/COMPLETED 신청이 있으면 또 수락할 수 없습니다(한 글당 하나만 진행). */
+    /**
+     * 글쓴이만 가능. 같은 게시글에 이미 ACCEPTED/COMPLETED 신청이 있으면 또 수락할 수 없습니다(한 글당 하나만 진행).
+     *
+     * <p>reject()/cancel()/complete()도 같은 게시글이면 전부 lockPost()로 직렬화됩니다. lockPost()는
+     * 기다렸다 얻은 락일 뿐 그 시점의 최신 상태를 보장하지 않으므로(MySQL REPEATABLE READ 스냅샷),
+     * 락을 잡은 뒤 {@link ExchangeApplicationWriter}로 상태를 다시 확인합니다.
+     */
     @Transactional
     public void accept(Long applicationId, Long userId) {
         ExchangeApplication application = getOwnedApplication(applicationId, userId);
-        requireApplied(application);
+        requireApplied(application.getStatus());
         lockPost(application.getPostId());
-        if (exchangeApplicationRepository.existsByPostIdAndStatusIn(application.getPostId(), IN_PROGRESS_OR_DONE)) {
+
+        requireApplied(exchangeApplicationWriter.currentStatus(applicationId));
+        if (exchangeApplicationWriter.existsAcceptedOrCompleted(application.getPostId())) {
             throw new BusinessException(PostErrorCode.ANOTHER_APPLICATION_ALREADY_ACCEPTED);
         }
         application.accept();
@@ -127,28 +133,26 @@ public class ExchangeApplicationService {
     @Transactional
     public void reject(Long applicationId, Long userId) {
         ExchangeApplication application = getOwnedApplication(applicationId, userId);
-        requireReversible(application);
+        requireReversible(application.getStatus());
+        lockPost(application.getPostId());
+
+        requireReversible(exchangeApplicationWriter.currentStatus(applicationId));
         application.reject();
     }
 
-    /**
-     * 완료 처리는 글쓴이만 가능합니다(신청자는 못 함). 부모 게시글의 ExchangeDetail도 같이 완료 처리합니다.
-     * ExchangeDetail을 Post와 한 번에 조회해서(join fetch) 소유자 확인용 Post를 따로 조회하지 않습니다.
-     */
+    /** 완료 처리는 글쓴이만 가능합니다(신청자는 못 함). 부모 게시글의 ExchangeDetail도 같이 완료 처리합니다. */
     @Transactional
     public void complete(Long applicationId, Long userId) {
         ExchangeApplication application = getApplication(applicationId);
+        Long postId = application.getPostId();
+        postService.getOwnedPost(postId, userId);
 
-        ExchangeDetail detail = exchangeDetailRepository.findWithPostByPostId(application.getPostId())
-                .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
-        if (!detail.getPost().isOwnedBy(userId)) {
-            throw new BusinessException(PostErrorCode.NOT_POST_OWNER);
-        }
-        if (!application.isAccepted()) {
-            throw new BusinessException(PostErrorCode.EXCHANGE_APPLICATION_INVALID_STATUS);
-        }
+        ExchangeDetail detail = lockPost(postId);
         if (detail.isCompleted()) {
             throw new BusinessException(PostErrorCode.EXCHANGE_ALREADY_COMPLETED);
+        }
+        if (exchangeApplicationWriter.currentStatus(applicationId) != ExchangeApplicationStatus.ACCEPTED) {
+            throw new BusinessException(PostErrorCode.EXCHANGE_APPLICATION_INVALID_STATUS);
         }
 
         application.complete();
@@ -162,7 +166,10 @@ public class ExchangeApplicationService {
         if (!application.isOwnedByApplicant(userId)) {
             throw new BusinessException(PostErrorCode.NOT_APPLICATION_OWNER);
         }
-        requireReversible(application);
+        requireReversible(application.getStatus());
+        lockPost(application.getPostId());
+
+        requireReversible(exchangeApplicationWriter.currentStatus(applicationId));
         application.cancel();
     }
 
@@ -191,15 +198,15 @@ public class ExchangeApplicationService {
         return application;
     }
 
-    private void requireApplied(ExchangeApplication application) {
-        if (!application.isApplied()) {
+    private void requireApplied(ExchangeApplicationStatus status) {
+        if (status != ExchangeApplicationStatus.APPLIED) {
             throw new BusinessException(PostErrorCode.EXCHANGE_APPLICATION_INVALID_STATUS);
         }
     }
 
     /** reject()/cancel()이 공유하는 가드. 대기중이거나 수락된 상태에서만 되돌릴 수 있습니다. */
-    private void requireReversible(ExchangeApplication application) {
-        if (!application.isApplied() && !application.isAccepted()) {
+    private void requireReversible(ExchangeApplicationStatus status) {
+        if (status != ExchangeApplicationStatus.APPLIED && status != ExchangeApplicationStatus.ACCEPTED) {
             throw new BusinessException(PostErrorCode.EXCHANGE_APPLICATION_INVALID_STATUS);
         }
     }
