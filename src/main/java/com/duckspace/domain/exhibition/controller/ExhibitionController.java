@@ -76,7 +76,7 @@ public class ExhibitionController {
 
     @Operation(summary = "장식장 상세",
             description = """
-                    배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height 로 그리면 됩니다.
+                    배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height/rotation 으로 그리면 됩니다.
                     좌표와 크기는 배경 대비 비율(0.0~1.0)입니다.
                     본인 장식장이면 처리 중(PENDING)·실패(FAILED)한 굿즈도 함께 나옵니다.
                     **비로그인도 호출할 수 있습니다.** 이때 mine·likedByMe 는 false 이고
@@ -121,6 +121,8 @@ public class ExhibitionController {
     @Operation(summary = "굿즈 배치",
             description = """
                     자유 배치입니다. placement 의 좌표·크기는 배경 대비 비율(0.0~1.0)입니다.
+                    rotation 은 회전 각도(도)로 -180~180 이며, 0 이 기본이고 양수가 시계 방향입니다.
+                    **rotation 은 선택 항목이라 안 보내면 0 으로 저장됩니다.**
                     위치가 겹쳐도 막지 않습니다. 현재는 imageUrl 을 직접 받습니다.
                     """)
     @PostMapping("/{exhibitionId}/items")
@@ -178,7 +180,10 @@ public class ExhibitionController {
     }
 
     @Operation(summary = "굿즈 위치·크기 저장",
-            description = "드래그로 옮기거나 크기를 조절한 결과를 저장합니다. 본인 장식장만 가능합니다.")
+            description = """
+                    드래그로 옮기거나 크기를 조절하거나 회전한 결과를 저장합니다. 본인 장식장만 가능합니다.
+                    **회전만 바꿀 때도 placement 를 통째로 보내세요.** 부분 수정이 아니라 통째 교체입니다.
+                    """)
     @PatchMapping("/{exhibitionId}/items/{itemId}/position")
     public ApiResponse<ExhibitionItemResponse> updateItemPosition(
             @AuthenticationPrincipal AuthUser authUser,

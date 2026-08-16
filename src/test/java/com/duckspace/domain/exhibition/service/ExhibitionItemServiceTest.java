@@ -78,7 +78,7 @@ class ExhibitionItemServiceTest {
 
     private AddItemRequest addRequest() {
         return new AddItemRequest(
-                new PlacementRequest(0.25, 0.4, 0.2, 0.3),
+                new PlacementRequest(0.25, 0.4, 0.2, 0.3, 0.0),
                 "https://img/x.png", "치이카와 인형", 15000, "귀여움");
     }
 
@@ -104,6 +104,36 @@ class ExhibitionItemServiceTest {
             assertThat(response.width()).isEqualTo(0.2);
             assertThat(response.height()).isEqualTo(0.3);
             assertThat(response.price()).isEqualTo(15000);
+        }
+
+        @Test
+        void 회전_각도를_그대로_저장한다() {
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
+                    .willAnswer(inv -> inv.getArgument(0));
+
+            ExhibitionItemResponse response = exhibitionItemService.add(EXHIBITION_ID, OWNER,
+                    new AddItemRequest(new PlacementRequest(0.25, 0.4, 0.2, 0.3, -37.5),
+                            "https://img/x.png", "굿즈", null, null));
+
+            // 위치·크기와 달리 각도는 화면 크기와 무관해서 비율로 바꾸지 않고 그대로 씁니다.
+            assertThat(response.rotation()).isEqualTo(-37.5);
+        }
+
+        @Test
+        void 회전을_보내지_않으면_0으로_저장한다() {
+            // 회전 기능이 생기기 전에 만들어진 화면이 그대로 동작해야 합니다.
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
+                    .willAnswer(inv -> inv.getArgument(0));
+
+            ExhibitionItemResponse response = exhibitionItemService.add(EXHIBITION_ID, OWNER,
+                    new AddItemRequest(new PlacementRequest(0.25, 0.4, 0.2, 0.3, null),
+                            "https://img/x.png", "굿즈", null, null));
+
+            assertThat(response.rotation())
+                    .as("null 을 그대로 두면 not null 컬럼에서 저장이 실패합니다")
+                    .isEqualTo(0.0);
         }
 
         @Test
@@ -143,11 +173,26 @@ class ExhibitionItemServiceTest {
 
             ExhibitionItemResponse response = exhibitionItemService.updatePosition(
                     EXHIBITION_ID, 5L, OWNER,
-                    new UpdatePositionRequest(new PlacementRequest(0.8, 0.9, 0.15, 0.15)));
+                    new UpdatePositionRequest(new PlacementRequest(0.8, 0.9, 0.15, 0.15, 0.0)));
 
             assertThat(response.posX()).isEqualTo(0.8);
             assertThat(response.posY()).isEqualTo(0.9);
             assertThat(target.getWidth()).isEqualTo(0.15);
+        }
+
+        @Test
+        void 회전만_바꾸는_것도_같은_API로_저장된다() {
+            // 프론트가 회전 핸들을 놓을 때도 이 API 를 씁니다. 위치를 안 바꿔도 같이 보냅니다.
+            ExhibitionItem target = item(5L);
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+
+            ExhibitionItemResponse response = exhibitionItemService.updatePosition(
+                    EXHIBITION_ID, 5L, OWNER,
+                    new UpdatePositionRequest(new PlacementRequest(0.1, 0.2, 0.3, 0.3, 90.0)));
+
+            assertThat(response.rotation()).isEqualTo(90.0);
+            assertThat(target.getRotation()).isEqualTo(90.0);
         }
 
         @Test
@@ -164,7 +209,7 @@ class ExhibitionItemServiceTest {
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exhibitionItemService.updatePosition(EXHIBITION_ID, 5L, OWNER,
-                            new UpdatePositionRequest(new PlacementRequest(0.8, 0.9, 0.15, 0.15))));
+                            new UpdatePositionRequest(new PlacementRequest(0.8, 0.9, 0.15, 0.15, 0.0))));
 
             assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.ITEM_NOT_FOUND);
         }
@@ -176,7 +221,7 @@ class ExhibitionItemServiceTest {
 
             assertThrows(BusinessException.class,
                     () -> exhibitionItemService.updatePosition(EXHIBITION_ID, 5L, STRANGER,
-                            new UpdatePositionRequest(new PlacementRequest(0.1, 0.1, 0.1, 0.1))));
+                            new UpdatePositionRequest(new PlacementRequest(0.1, 0.1, 0.1, 0.1, 0.0))));
 
             verify(exhibitionItemRepository, never()).findById(anyLong());
         }
@@ -198,7 +243,7 @@ class ExhibitionItemServiceTest {
 
         private com.duckspace.domain.exhibition.dto.request.UploadItemRequest uploadRequest() {
             return new com.duckspace.domain.exhibition.dto.request.UploadItemRequest(
-                    new PlacementRequest(0.3, 0.4, 0.2, 0.2), "치이카와 인형", 15000, "귀여움");
+                    new PlacementRequest(0.3, 0.4, 0.2, 0.2, 0.0), "치이카와 인형", 15000, "귀여움");
         }
 
         @Test
