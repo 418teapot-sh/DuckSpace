@@ -23,6 +23,14 @@ public enum PostErrorCode implements BaseErrorCode {
 
     CANNOT_REPORT_OWN_CONTENT(HttpStatus.BAD_REQUEST, "본인 게시글/댓글은 신고할 수 없습니다."),
     ALREADY_REPORTED(HttpStatus.CONFLICT, "이미 신고한 게시글/댓글입니다."),
+
+    EXCHANGE_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "교환 신청을 찾을 수 없습니다."),
+    NOT_APPLICATION_OWNER(HttpStatus.FORBIDDEN, "본인 신청만 가능합니다."),
+    SELF_APPLICATION_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "본인 글에는 신청할 수 없습니다."),
+    EXCHANGE_APPLICATION_INVALID_STATUS(HttpStatus.CONFLICT, "처리할 수 없는 신청 상태입니다."),
+    INVALID_APPLICATION_FILTER(HttpStatus.BAD_REQUEST, "filter는 sent 또는 received만 가능합니다."),
+    ALREADY_APPLIED(HttpStatus.CONFLICT, "이미 신청한 게시글입니다."),
+    ANOTHER_APPLICATION_ALREADY_ACCEPTED(HttpStatus.CONFLICT, "이미 다른 신청이 진행중입니다."),
     ;
 
     private final HttpStatus status;

@@ -1,6 +1,5 @@
 package com.duckspace.domain.post.dto.response;
 
-import com.duckspace.domain.post.entity.ExchangeMethod;
 import com.duckspace.domain.post.entity.ExchangeStatus;
 
 import java.time.LocalDateTime;
@@ -8,7 +7,6 @@ import java.time.LocalDateTime;
 public record ExchangePostSummaryResponse(
         Long id,
         String title,
-        ExchangeMethod method,
         ExchangeStatus status,
         String offeredItemName,
         String wantedItemName,

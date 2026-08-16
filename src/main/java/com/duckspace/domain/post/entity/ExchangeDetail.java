@@ -26,6 +26,7 @@ import org.hibernate.type.SqlTypes;
 public class ExchangeDetail {
 
     public static final int EXTRA_CONDITION_MAX_LENGTH = 200;
+    public static final int PREFERRED_TEXT_MAX_LENGTH = 50;
 
     @Id
     @Column(name = "post_id")
@@ -38,22 +39,32 @@ public class ExchangeDetail {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
-    @Column(name = "method", nullable = false)
-    private ExchangeMethod method;
-
-    @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", nullable = false)
     private ExchangeStatus status;
 
     @Column(name = "extra_condition", length = EXTRA_CONDITION_MAX_LENGTH)
     private String extraCondition;
 
-    public ExchangeDetail(Post post, ExchangeMethod method, String extraCondition) {
+    /** 교환하고 싶은 팝업 이름. 선택 입력. */
+    @Column(name = "preferred_popup_name", length = PREFERRED_TEXT_MAX_LENGTH)
+    private String preferredPopupName;
+
+    /** 선호 날짜. 자유 텍스트(예: "260809"). 선택 입력. */
+    @Column(name = "preferred_date", length = PREFERRED_TEXT_MAX_LENGTH)
+    private String preferredDate;
+
+    /** 선호 시간. 자유 텍스트(예: "12시부터14시까지"). 선택 입력. */
+    @Column(name = "preferred_time", length = PREFERRED_TEXT_MAX_LENGTH)
+    private String preferredTime;
+
+    public ExchangeDetail(Post post, String extraCondition,
+                           String preferredPopupName, String preferredDate, String preferredTime) {
         this.post = post;
-        this.method = method;
         this.status = ExchangeStatus.OPEN;
         this.extraCondition = extraCondition;
+        this.preferredPopupName = preferredPopupName;
+        this.preferredDate = preferredDate;
+        this.preferredTime = preferredTime;
     }
 
     public void complete() {
