@@ -23,7 +23,7 @@ jwt:
   # 조용히 공개된 값으로 동작하는 대신 부팅이 실패하도록 합니다. (local 값은 application-local.yml)
   secret: ${JWT_SECRET}
   access-token-validity: 1800000      # 30분 (ms)
-  refresh-token-validity: 1209600000  # 14일 (ms)
+  refresh-token-validity: 10000  # 10초 (ms) — 프론트 재발급 테스트용 임시값, 테스트 끝나면 14일(1209600000)로 되돌릴 것
 
 cors:
   # 배포 시 CORS_ALLOWED_ORIGINS로 덮어쓰세요. 와일드카드(*) 사용 가능.
