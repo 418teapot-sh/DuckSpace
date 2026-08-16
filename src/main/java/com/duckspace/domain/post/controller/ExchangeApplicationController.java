@@ -30,7 +30,8 @@ public class ExchangeApplicationController {
 
     private final ExchangeApplicationService exchangeApplicationService;
 
-    @Operation(summary = "교환 신청", description = "본인 글에는 신청할 수 없고, 이미 교환 완료된 글에는 신청할 수 없습니다.")
+    @Operation(summary = "교환 신청",
+            description = "본인 글에는 신청할 수 없고, 이미 교환 완료된 글에는 신청할 수 없습니다. 같은 글에 대기중(APPLIED)이거나 수락된(ACCEPTED) 신청이 이미 있으면 또 신청할 수 없습니다.")
     @PostMapping("/posts/exchange/{postId}/applications")
     public ApiResponse<Long> apply(@AuthenticationPrincipal AuthUser authUser,
                                     @PathVariable Long postId,
@@ -38,18 +39,24 @@ public class ExchangeApplicationController {
         return ApiResponse.success(exchangeApplicationService.apply(authUser.getUserId(), postId, request));
     }
 
-    @Operation(summary = "게시글별 신청 목록", description = "글쓴이만 조회할 수 있습니다.")
+    @Operation(summary = "게시글별 신청 목록",
+            description = "글쓴이만 조회할 수 있습니다. cursor를 비우면 최신 신청부터, 값을 주면 그보다 오래된 신청을 내려줍니다(마지막으로 받은 id를 cursor에 넣으면 됨).")
     @GetMapping("/posts/exchange/{postId}/applications")
     public ApiResponse<List<ExchangeApplicationResponse>> listByPost(@AuthenticationPrincipal AuthUser authUser,
-                                                                       @PathVariable Long postId) {
-        return ApiResponse.success(exchangeApplicationService.listByPost(postId, authUser.getUserId()));
+                                                                       @PathVariable Long postId,
+                                                                       @RequestParam(required = false) Long cursor,
+                                                                       @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(exchangeApplicationService.listByPost(postId, authUser.getUserId(), cursor, size));
     }
 
-    @Operation(summary = "내 신청함", description = "filter=sent면 내가 신청한 것, filter=received면 내 글에 들어온 신청입니다.")
+    @Operation(summary = "내 신청함",
+            description = "filter=sent면 내가 신청한 것, filter=received면 내 글에 들어온 신청입니다. cursor/size는 게시글별 신청 목록과 같은 규칙입니다.")
     @GetMapping("/applications")
     public ApiResponse<List<ExchangeApplicationResponse>> listMine(@AuthenticationPrincipal AuthUser authUser,
-                                                                      @RequestParam String filter) {
-        return ApiResponse.success(exchangeApplicationService.listMine(authUser.getUserId(), filter));
+                                                                      @RequestParam String filter,
+                                                                      @RequestParam(required = false) Long cursor,
+                                                                      @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(exchangeApplicationService.listMine(authUser.getUserId(), filter, cursor, size));
     }
 
     @Operation(summary = "신청 수락", description = "글쓴이만 가능합니다.")

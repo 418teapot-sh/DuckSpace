@@ -26,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -36,6 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -96,7 +100,7 @@ class ExchangeApplicationServiceTest {
             Post post = exchangePost(1L, 10L);
             ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
             given(exchangeApplicationRepository.save(any(ExchangeApplication.class))).willAnswer(invocation -> {
                 ExchangeApplication application = invocation.getArgument(0);
                 ReflectionTestUtils.setField(application, "id", 100L);
@@ -132,7 +136,7 @@ class ExchangeApplicationServiceTest {
             ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             detail.complete();
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exchangeApplicationService.apply(20L, 1L,
@@ -160,9 +164,27 @@ class ExchangeApplicationServiceTest {
             Post post = exchangePost(1L, 10L);
             ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeDetailRepository.findById(1L)).willReturn(Optional.of(detail));
-            given(exchangeApplicationRepository.existsByPostIdAndApplicantUserIdAndStatus(
-                    1L, 20L, ExchangeApplicationStatus.APPLIED)).willReturn(true);
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationRepository.existsByPostIdAndApplicantUserIdAndStatusIn(
+                    eq(1L), eq(20L), anyCollection())).willReturn(true);
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exchangeApplicationService.apply(20L, 1L,
+                            new ExchangeApplicationRequest("인형", null, null, null, null)));
+
+            assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.ALREADY_APPLIED);
+            verify(exchangeApplicationRepository, never()).save(any());
+        }
+
+        @Test
+        void 이미_수락된_신청이_있어도_예외() {
+            Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
+            given(exchangeApplicationRepository.existsByPostIdAndApplicantUserIdAndStatusIn(
+                    eq(1L), eq(20L), argThat(statuses -> statuses.contains(ExchangeApplicationStatus.ACCEPTED))))
+                    .willReturn(true);
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exchangeApplicationService.apply(20L, 1L,
@@ -183,7 +205,7 @@ class ExchangeApplicationServiceTest {
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
 
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> exchangeApplicationService.listByPost(1L, 999L));
+                    () -> exchangeApplicationService.listByPost(1L, 999L, null, null));
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.NOT_POST_OWNER);
         }
@@ -193,10 +215,11 @@ class ExchangeApplicationServiceTest {
             Post post = exchangePost(1L, 10L);
             ExchangeApplication app = application(100L, 1L, 20L);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
-            given(exchangeApplicationRepository.findByPostIdOrderByAppliedAtDescIdDesc(1L)).willReturn(List.of(app));
+            given(exchangeApplicationRepository.findByPostId(eq(1L), isNull(), any(Pageable.class)))
+                    .willReturn(List.of(app));
             given(userRepository.findNicknamesByIds(anyCollection())).willReturn(Map.of(20L, "신청자"));
 
-            List<ExchangeApplicationResponse> responses = exchangeApplicationService.listByPost(1L, 10L);
+            List<ExchangeApplicationResponse> responses = exchangeApplicationService.listByPost(1L, 10L, null, null);
 
             assertThat(responses).hasSize(1);
             assertThat(responses.get(0).applicantNickname()).isEqualTo("신청자");
@@ -209,26 +232,28 @@ class ExchangeApplicationServiceTest {
 
         @Test
         void filter가_sent면_내가_신청한_목록을_조회한다() {
-            given(exchangeApplicationRepository.findByApplicantUserIdOrderByAppliedAtDescIdDesc(20L)).willReturn(List.of());
+            given(exchangeApplicationRepository.findByApplicantUserId(eq(20L), isNull(), any(Pageable.class)))
+                    .willReturn(List.of());
 
-            exchangeApplicationService.listMine(20L, "sent");
+            exchangeApplicationService.listMine(20L, "sent", null, null);
 
-            verify(exchangeApplicationRepository).findByApplicantUserIdOrderByAppliedAtDescIdDesc(20L);
+            verify(exchangeApplicationRepository).findByApplicantUserId(eq(20L), isNull(), any(Pageable.class));
         }
 
         @Test
         void filter가_received면_받은_신청_목록을_조회한다() {
-            given(exchangeApplicationRepository.findReceivedByUserId(10L)).willReturn(List.of());
+            given(exchangeApplicationRepository.findReceivedByUserId(eq(10L), isNull(), any(Pageable.class)))
+                    .willReturn(List.of());
 
-            exchangeApplicationService.listMine(10L, "received");
+            exchangeApplicationService.listMine(10L, "received", null, null);
 
-            verify(exchangeApplicationRepository).findReceivedByUserId(10L);
+            verify(exchangeApplicationRepository).findReceivedByUserId(eq(10L), isNull(), any(Pageable.class));
         }
 
         @Test
         void 잘못된_filter면_예외() {
             BusinessException exception = assertThrows(BusinessException.class,
-                    () -> exchangeApplicationService.listMine(10L, "invalid"));
+                    () -> exchangeApplicationService.listMine(10L, "invalid", null, null));
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.INVALID_APPLICATION_FILTER);
         }
@@ -241,9 +266,11 @@ class ExchangeApplicationServiceTest {
         @Test
         void 글쓴이면_수락된다() {
             Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
 
             exchangeApplicationService.accept(100L, 10L);
 
@@ -280,9 +307,11 @@ class ExchangeApplicationServiceTest {
         @Test
         void 같은_글에_이미_수락된_다른_신청이_있으면_예외() {
             Post post = exchangePost(1L, 10L);
+            ExchangeDetail detail = new ExchangeDetail(post, null, null, null, null);
             ExchangeApplication app = application(100L, 1L, 20L);
             given(exchangeApplicationRepository.findById(100L)).willReturn(Optional.of(app));
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(exchangeDetailRepository.findByPostIdForUpdate(1L)).willReturn(Optional.of(detail));
             given(exchangeApplicationRepository.existsByPostIdAndStatusIn(any(), any())).willReturn(true);
 
             BusinessException exception = assertThrows(BusinessException.class,

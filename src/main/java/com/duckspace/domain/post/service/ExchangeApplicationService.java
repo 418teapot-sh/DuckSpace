@@ -14,7 +14,10 @@ import com.duckspace.domain.post.repository.ExchangeDetailRepository;
 import com.duckspace.domain.post.repository.PostRepository;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
+import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +42,13 @@ public class ExchangeApplicationService {
     private static final EnumSet<ExchangeApplicationStatus> IN_PROGRESS_OR_DONE =
             EnumSet.of(ExchangeApplicationStatus.ACCEPTED, ExchangeApplicationStatus.COMPLETED);
 
+    /** apply()에서 이미 진행 중인 신청이 있는지 확인할 때 씁니다. COMPLETED는 detail.isCompleted()가 먼저 막아서 여기 안 옵니다. */
+    private static final EnumSet<ExchangeApplicationStatus> ACTIVE_APPLICATION =
+            EnumSet.of(ExchangeApplicationStatus.APPLIED, ExchangeApplicationStatus.ACCEPTED);
+
+    private static final int MAX_PAGE_SIZE = 50;
+    private static final int DEFAULT_PAGE_SIZE = 20;
+
     private final ExchangeApplicationRepository exchangeApplicationRepository;
     private final ExchangeDetailRepository exchangeDetailRepository;
     private final PostRepository postRepository;
@@ -55,13 +65,12 @@ public class ExchangeApplicationService {
             throw new BusinessException(PostErrorCode.SELF_APPLICATION_NOT_ALLOWED);
         }
 
-        ExchangeDetail detail = exchangeDetailRepository.findById(postId)
-                .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
+        ExchangeDetail detail = lockPost(postId);
         if (detail.isCompleted()) {
             throw new BusinessException(PostErrorCode.EXCHANGE_ALREADY_COMPLETED);
         }
-        if (exchangeApplicationRepository.existsByPostIdAndApplicantUserIdAndStatus(
-                postId, userId, ExchangeApplicationStatus.APPLIED)) {
+        if (exchangeApplicationRepository.existsByPostIdAndApplicantUserIdAndStatusIn(
+                postId, userId, ACTIVE_APPLICATION)) {
             throw new BusinessException(PostErrorCode.ALREADY_APPLIED);
         }
 
@@ -71,22 +80,27 @@ public class ExchangeApplicationService {
         return application.getId();
     }
 
-    /** 해당 게시글에 달린 신청 목록. 글쓴이만 조회할 수 있습니다. */
-    public List<ExchangeApplicationResponse> listByPost(Long postId, Long userId) {
+    /**
+     * 해당 게시글에 달린 신청 목록. 글쓴이만 조회할 수 있습니다. 최신순 커서 페이징입니다.
+     * cursor를 비우면 최신 신청부터, 값을 주면 그보다 오래된 신청을 내려줍니다(마지막으로 받은 id를 cursor에 넣으면 됨).
+     */
+    public List<ExchangeApplicationResponse> listByPost(Long postId, Long userId, Long cursor, Integer size) {
         Post post = postService.getOwnedPost(postId, userId);
 
-        List<ExchangeApplication> applications = exchangeApplicationRepository.findByPostIdOrderByAppliedAtDescIdDesc(postId);
+        List<ExchangeApplication> applications =
+                exchangeApplicationRepository.findByPostId(postId, cursor, pageable(size));
         Map<Long, String> nicknames = batchNicknames(applications);
         return applications.stream()
                 .map(application -> toResponse(application, post.getTitle(), nicknames.get(application.getApplicantUserId())))
                 .toList();
     }
 
-    /** 내 신청함. filter는 sent(내가 신청한 것)/received(내 글에 들어온 신청)만 허용합니다. */
-    public List<ExchangeApplicationResponse> listMine(Long userId, String filter) {
+    /** 내 신청함. filter는 sent(내가 신청한 것)/received(내 글에 들어온 신청)만 허용합니다. cursor/size는 listByPost와 같은 규칙입니다. */
+    public List<ExchangeApplicationResponse> listMine(Long userId, String filter, Long cursor, Integer size) {
+        Pageable pageable = pageable(size);
         List<ExchangeApplication> applications = switch (ApplicationFilter.from(filter)) {
-            case SENT -> exchangeApplicationRepository.findByApplicantUserIdOrderByAppliedAtDescIdDesc(userId);
-            case RECEIVED -> exchangeApplicationRepository.findReceivedByUserId(userId);
+            case SENT -> exchangeApplicationRepository.findByApplicantUserId(userId, cursor, pageable);
+            case RECEIVED -> exchangeApplicationRepository.findReceivedByUserId(userId, cursor, pageable);
         };
 
         Map<Long, String> postTitles = batchPostTitles(applications);
@@ -102,6 +116,7 @@ public class ExchangeApplicationService {
     public void accept(Long applicationId, Long userId) {
         ExchangeApplication application = getOwnedApplication(applicationId, userId);
         requireApplied(application);
+        lockPost(application.getPostId());
         if (exchangeApplicationRepository.existsByPostIdAndStatusIn(application.getPostId(), IN_PROGRESS_OR_DONE)) {
             throw new BusinessException(PostErrorCode.ANOTHER_APPLICATION_ALREADY_ACCEPTED);
         }
@@ -149,6 +164,19 @@ public class ExchangeApplicationService {
         }
         requireReversible(application);
         application.cancel();
+    }
+
+    /**
+     * "게시글당 하나만 진행" 불변식을 지키기 위해 잠급니다. apply()/accept()가 같은 게시글에 대해
+     * 동시에 들어와도 뒤에 들어온 트랜잭션이 앞선 트랜잭션의 커밋을 기다렸다가 최신 상태로 검사하게 됩니다.
+     */
+    private ExchangeDetail lockPost(Long postId) {
+        return exchangeDetailRepository.findByPostIdForUpdate(postId)
+                .orElseThrow(() -> new BusinessException(PostErrorCode.POST_NOT_FOUND));
+    }
+
+    private Pageable pageable(Integer size) {
+        return PageRequest.of(0, Paging.normalize(size, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE));
     }
 
     private ExchangeApplication getApplication(Long applicationId) {
