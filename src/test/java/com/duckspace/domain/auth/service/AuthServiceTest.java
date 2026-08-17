@@ -6,6 +6,7 @@ import com.duckspace.domain.auth.dto.TokenResponse;
 import com.duckspace.domain.auth.entity.RefreshToken;
 import com.duckspace.domain.auth.exception.AuthErrorCode;
 import com.duckspace.domain.auth.repository.RefreshTokenRepository;
+import com.duckspace.domain.exhibition.service.ExhibitionService;
 import com.duckspace.domain.user.entity.AuthProvider;
 import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
@@ -49,6 +50,9 @@ class AuthServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private ExhibitionService exhibitionService;
+
     private JwtTokenProvider jwtTokenProvider;
     private AuthService authService;
 
@@ -56,7 +60,7 @@ class AuthServiceTest {
     void setUp() {
         jwtTokenProvider = new JwtTokenProvider(new JwtProperties(SECRET, 1000 * 60 * 30L, 1000 * 60 * 60 * 24 * 14L));
         authService = new AuthService(jwtTokenProvider, refreshTokenRepository, userRepository, passwordEncoder,
-                new LoginAttemptLimiter(), new RefreshTokenWriter(refreshTokenRepository));
+                new LoginAttemptLimiter(), new RefreshTokenWriter(refreshTokenRepository), exhibitionService);
     }
 
     private User localUser(String email, String encodedPassword) {
@@ -89,6 +93,7 @@ class AuthServiceTest {
 
             assertThat(response.accessToken()).isNotBlank();
             assertThat(response.refreshToken()).isNotBlank();
+            verify(exhibitionService).createDefault(1L);
         }
 
         @Test
