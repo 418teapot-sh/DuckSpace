@@ -10,8 +10,9 @@ import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.image.ImageCleanup;
-import com.duckspace.domain.exhibition.image.ImageInspector;
+import com.duckspace.domain.exhibition.image.MultipartImageValidator;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
+import com.duckspace.domain.exhibition.repository.GoodsImageRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
@@ -22,11 +23,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -40,10 +39,8 @@ public class ExhibitionItemService {
     /** 이보다 오래 PENDING 인 아이템은 처리가 끊긴 것으로 보고 재시도를 허용합니다. */
     private static final Duration ABANDONED_PENDING_THRESHOLD = Duration.ofMinutes(15);
 
-    /** 브라우저가 보내는 이미지 MIME 타입. ImageIO 가 읽을 수 있는 형식으로 제한합니다. */
-    private static final Set<String> SUPPORTED_TYPES = Set.of("image/jpeg", "image/jpg", "image/png");
-
     private final ExhibitionItemRepository exhibitionItemRepository;
+    private final GoodsImageRepository goodsImageRepository;
     private final ExhibitionService exhibitionService;
     private final ImageCleanup imageCleanup;
     private final ApplicationEventPublisher eventPublisher;
@@ -76,8 +73,8 @@ public class ExhibitionItemService {
         Exhibition exhibition = exhibitionService.getOwnedExhibition(exhibitionId, userId);
 
         // 행을 만들기 전에 바이트까지 확인합니다. 나중에 걸러내면 PENDING 인 껍데기가 남습니다.
-        byte[] data = readBytes(image);
-        validateImage(image, data);
+        byte[] data = MultipartImageValidator.readBytes(image);
+        MultipartImageValidator.validate(image, data);
 
         ExhibitionItem item = new ExhibitionItem(
                 exhibition, request.placement().toPlacement(), null,
@@ -198,11 +195,20 @@ public class ExhibitionItemService {
     @Transactional
     public void delete(Long exhibitionId, Long itemId, Long userId) {
         exhibitionService.getOwnedExhibition(exhibitionId, userId);
-
         ExhibitionItem item = getItemOf(exhibitionId, itemId);
+
+        // 파일은 이 굿즈만 쓰고 있을 때만 지웁니다. 보관함이 소유했거나(배치 원본)
+        // 같은 URL 을 재사용한 다른 굿즈가 있으면, 지우는 순간 그쪽 그림이 깨집니다.
+        String url = item.getImageUrl();
+        boolean deletable = url != null
+                && !goodsImageRepository.existsByImageUrl(url)
+                && !exhibitionItemRepository.existsByImageUrlAndIdNot(url, item.getId());
+
         exhibitionItemRepository.delete(item);
-        // DB 행만 지우면 S3 객체가 그대로 남습니다.
-        imageCleanup.deleteAfterCommit(item.getImageUrl());
+        if (deletable) {
+            // DB 행만 지우면 S3 객체가 그대로 남습니다.
+            imageCleanup.deleteAfterCommit(url);
+        }
     }
 
     /** 다른 장식장의 굿즈 id 를 넣어도 건드려지지 않도록 확인합니다. */
@@ -215,32 +221,4 @@ public class ExhibitionItemService {
         return item;
     }
 
-    /**
-     * 업로드된 파일이 정말 이미지인지 확인합니다.
-     *
-     * <p><b>{@code Content-Type} 헤더만 믿으면 안 됩니다.</b> 클라이언트가 보내는 값이라
-     * 아무 파일에나 {@code image/png} 를 붙일 수 있고, 그러면 처리에 실패한 뒤 원본이 그대로
-     * 저장되어 <b>공개 URL 로 서빙됩니다</b> — 업로드 창구가 곧 파일 호스팅이 됩니다.
-     * 그래서 실제 바이트를 디코더에 물어봅니다.
-     */
-    private void validateImage(MultipartFile image, byte[] data) {
-        if (image == null || image.isEmpty() || data.length == 0) {
-            throw new BusinessException(ExhibitionErrorCode.EMPTY_IMAGE);
-        }
-        String contentType = image.getContentType();
-        if (contentType == null || !SUPPORTED_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
-            throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
-        }
-        if (!ImageInspector.isSupported(data)) {
-            throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
-        }
-    }
-
-    private byte[] readBytes(MultipartFile image) {
-        try {
-            return image.getBytes();
-        } catch (IOException e) {
-            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
-        }
-    }
 }

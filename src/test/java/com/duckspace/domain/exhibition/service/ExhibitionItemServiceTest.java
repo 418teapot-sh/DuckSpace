@@ -55,6 +55,9 @@ class ExhibitionItemServiceTest {
     private com.duckspace.domain.exhibition.image.ImageCleanup imageCleanup;
 
     @Mock
+    private com.duckspace.domain.exhibition.repository.GoodsImageRepository goodsImageRepository;
+
+    @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
@@ -638,6 +641,34 @@ class ExhibitionItemServiceTest {
 
             // 이걸 빼면 DB 행만 사라지고 S3 객체는 영원히 남습니다.
             verify(imageCleanup).deleteAfterCommit("https://img/a.png");
+        }
+
+        @Test
+        void 보관함이_소유한_이미지면_파일은_남긴다() {
+            // 보관함에서 골라 배치한 굿즈를 회수해도, 보관함 원본은 살아 있어야
+            // 다시 배치할 수 있습니다.
+            ExhibitionItem target = item(5L);
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+            given(goodsImageRepository.existsByImageUrl("https://img/a.png")).willReturn(true);
+
+            exhibitionItemService.delete(EXHIBITION_ID, 5L, OWNER);
+
+            verify(exhibitionItemRepository).delete(target);
+            verify(imageCleanup, never()).deleteAfterCommit(org.mockito.ArgumentMatchers.anyString());
+        }
+
+        @Test
+        void 같은_이미지를_쓰는_다른_굿즈가_있으면_파일은_남긴다() {
+            ExhibitionItem target = item(5L);
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(exhibitionItemRepository.findById(5L)).willReturn(Optional.of(target));
+            given(exhibitionItemRepository.existsByImageUrlAndIdNot("https://img/a.png", 5L)).willReturn(true);
+
+            exhibitionItemService.delete(EXHIBITION_ID, 5L, OWNER);
+
+            // 지우면 그 굿즈의 그림이 통째로 깨집니다. (시드 데이터가 정확히 이 모양입니다)
+            verify(imageCleanup, never()).deleteAfterCommit(org.mockito.ArgumentMatchers.anyString());
         }
 
         @Test
