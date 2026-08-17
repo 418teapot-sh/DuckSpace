@@ -6,7 +6,9 @@ import com.duckspace.domain.post.dto.request.ReportRequest;
 import com.duckspace.domain.post.dto.response.CasualPostSummaryResponse;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
+import com.duckspace.domain.post.dto.response.PostImageResponse;
 import com.duckspace.domain.post.service.LikeService;
+import com.duckspace.domain.post.service.PostImageService;
 import com.duckspace.domain.post.service.PostService;
 import com.duckspace.domain.post.service.ReportService;
 import com.duckspace.global.auth.AuthUser;
@@ -15,6 +17,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -37,6 +41,20 @@ public class PostController {
     private final PostService postService;
     private final LikeService likeService;
     private final ReportService reportService;
+    private final PostImageService postImageService;
+
+    @Operation(summary = "이미지 업로드",
+            description = """
+                    잡담/교환 글에 첨부할 이미지를 먼저 올려 URL을 받는 용도입니다.
+                    받은 URL을 글 작성 요청의 imageUrls / offeredItem.imageUrl / wantedItem.imageUrl에 넣어 보내세요.
+                    JPG 또는 PNG, 10MB 이하만 받습니다. 후처리 없이 즉시 URL을 돌려줍니다.
+                    """)
+    @PostMapping(value = "/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<PostImageResponse> uploadImage(@AuthenticationPrincipal AuthUser authUser,
+                                                        @RequestParam("image") MultipartFile image) {
+        String imageUrl = postImageService.upload(authUser.getUserId(), image);
+        return ApiResponse.success(new PostImageResponse(imageUrl));
+    }
 
     @Operation(summary = "잡담 글 작성")
     @PostMapping("/casual")
