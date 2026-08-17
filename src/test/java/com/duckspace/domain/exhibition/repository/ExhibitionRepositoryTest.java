@@ -188,7 +188,7 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
-    @DisplayName("내 장식장만, 최근에 만든 것부터 가져온다")
+    @DisplayName("내 장식장만, 만든 순서대로 가져온다")
     void 내_장식장_목록() {
         Exhibition mineOld = exhibition(1L, "내 첫 장식장");
         Exhibition othersOne = exhibition(2L, "남의 장식장");
@@ -198,8 +198,8 @@ class ExhibitionRepositoryTest {
         List<Long> ids = exhibitionRepository.findIdsByUserId(1L, PageRequest.of(0, 20));
 
         assertThat(ids)
-                .as("최근에 만든 것이 먼저 나와야 합니다")
-                .containsExactly(mineNew.getId(), mineOld.getId());
+                .as("먼저 만든 것이 먼저 나와야 합니다")
+                .containsExactly(mineOld.getId(), mineNew.getId());
         assertThat(ids).doesNotContain(othersOne.getId());
     }
 

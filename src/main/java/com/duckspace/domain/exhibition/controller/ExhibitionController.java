@@ -64,7 +64,7 @@ public class ExhibitionController {
 
     @Operation(summary = "내 장식장 목록",
             description = """
-                    마이페이지용. 최근에 만든 것부터 돌려줍니다. limit 기본 20, 최대 50.
+                    마이페이지용. 만든 순서대로(오래된 것부터) 돌려줍니다. limit 기본 20, 최대 50.
                     응답 형태는 인기 전시장·검색과 같습니다.
                     """)
     @GetMapping("/me")
