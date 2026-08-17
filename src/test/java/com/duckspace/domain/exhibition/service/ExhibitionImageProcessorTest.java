@@ -50,6 +50,9 @@ class ExhibitionImageProcessorTest {
     @Mock
     private ExhibitionItemStatusWriter statusWriter;
 
+    @Mock
+    private GoodsImageStatusWriter goodsImageStatusWriter;
+
     private ExhibitionImageProcessor processor;
     private byte[] imageBytes;
 
@@ -63,7 +66,7 @@ class ExhibitionImageProcessorTest {
         org.mockito.Mockito.lenient().when(statusWriter.markFailed(anyLong(), any())).thenReturn(true);
         imageBytes = pngBytes(200, 200);
         processor = new ExhibitionImageProcessor(
-                removeBgClient, imageStorage, imageCleanup, statusWriter,
+                removeBgClient, imageStorage, imageCleanup, statusWriter, goodsImageStatusWriter,
                 task -> directExecutor.execute(task));
     }
 
@@ -295,6 +298,52 @@ class ExhibitionImageProcessorTest {
         handle();
 
         verify(imageCleanup).delete("https://cdn/copy.jpeg");
+    }
+
+    // ------------------------------------------------------------------
+    // 보관함 사진 — 같은 파이프라인, 기록 대상만 다릅니다
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("보관함 업로드는 유저 경로에 저장하고 보관함 상태에 기록한다")
+    void 보관함_업로드는_유저_경로와_보관함_기록을_쓴다() {
+        given(goodsImageStatusWriter.markReady(anyLong(), anyString())).willReturn(true);
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/lib.png");
+
+        processor.handle(new GoodsImageUploadedEvent(77L, 3L, imageBytes, "goods.png"));
+
+        // 장식장이 없으므로 저장 경로가 exhibitions/ 가 아니라 images/{userId}/ 여야 합니다.
+        verify(imageStorage).upload(org.mockito.ArgumentMatchers.startsWith("images/3/"), any(), eq("image/png"));
+        verify(goodsImageStatusWriter).markReady(77L, "https://cdn/lib.png");
+        verify(statusWriter, never()).markReady(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("보관함 기록이 무시되면(no-op) 처리본을 회수한다 — 굿즈와 같은 규칙")
+    void 보관함_기록_노업이면_처리본_회수() {
+        given(goodsImageStatusWriter.markReady(anyLong(), anyString())).willReturn(false);
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/lib.png");
+
+        processor.handle(new GoodsImageUploadedEvent(77L, 3L, imageBytes, "goods.png"));
+
+        verify(imageCleanup).delete("https://cdn/lib.png");
+    }
+
+    @Test
+    @DisplayName("보관함 재처리도 원본을 내려받아 다시 태운다")
+    void 보관함_재처리() {
+        given(goodsImageStatusWriter.markReady(anyLong(), anyString())).willReturn(true);
+        given(removeBgClient.isEnabled()).willReturn(false);
+        given(imageStorage.download("https://cdn/lib-origin.png")).willReturn(imageBytes);
+        given(imageStorage.upload(anyString(), any(), eq("image/png"))).willReturn("https://cdn/lib2.png");
+
+        processor.handleRetry(new GoodsImageRetryRequestedEvent(77L, 3L, "https://cdn/lib-origin.png"));
+
+        verify(goodsImageStatusWriter).markReady(77L, "https://cdn/lib2.png");
+        // 처리본이 원본을 대체했으므로 남겨뒀던 원본은 정리됩니다.
+        verify(imageCleanup).delete("https://cdn/lib-origin.png");
     }
 
     // ------------------------------------------------------------------
