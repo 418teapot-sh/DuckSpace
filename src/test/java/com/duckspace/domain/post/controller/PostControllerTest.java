@@ -3,6 +3,7 @@ package com.duckspace.domain.post.controller;
 import com.duckspace.domain.post.dto.request.CasualPostRequest;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.service.LikeService;
+import com.duckspace.domain.post.service.PostImageService;
 import com.duckspace.domain.post.service.PostService;
 import com.duckspace.domain.post.service.ReportService;
 import com.duckspace.global.auth.AuthUser;
@@ -53,6 +54,8 @@ class PostControllerTest {
     private LikeService likeService;
     @MockitoBean
     private ReportService reportService;
+    @MockitoBean
+    private PostImageService postImageService;
 
     @Test
     void createCasual_길이초과면_400() throws Exception {
