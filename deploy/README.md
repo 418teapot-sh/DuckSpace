@@ -97,16 +97,10 @@ Flyway/Liquibase가 없고 `ddl-auto: update`만 씁니다. `update`는 **컬럼
 타이밍)에 서버 MySQL에 아래 SQL을 수동으로 실행해야 합니다. 안 하면 그 컬럼이 걸린 INSERT/UPDATE가
 전부 실패합니다.
 
-**대기중인 마이그레이션:**
-- `feat/34-exchange-application` — `exchange_detail.method` 컬럼 삭제 (교환 방식을 팝업 현장
-  직접 만남만 지원하도록 변경, `method`/`ExchangeMethod` 자체가 코드에서 사라짐):
-  ```sql
-  ALTER TABLE exchange_detail DROP COLUMN method;
-  ```
-  실행 전엔 `POST /api/posts/exchange`가 매번 `Field 'method' doesn't have a default value`로
-  실패합니다(엔티티가 더 이상 이 컬럼에 값을 안 채우는데 컬럼은 NOT NULL로 남아있기 때문).
-  로컬은 `docker compose down -v && docker compose up -d`로 스키마를 통째로 새로 만들면 되지만,
-  dev/prod는 데이터가 있으므로 위 SQL을 직접 실행하세요.
+**대기중인 마이그레이션:** 없음.
 
-실행 후엔 이 항목을 지우고, 새로 스키마를 바꾸는 PR이 머지될 때마다 이 섹션에 다음 항목을
-추가하는 걸 관례로 합니다.
+(2026-08-17 완료: `exchange_detail.method` 컬럼 삭제, 로컬/프로덕션 둘 다 실행 완료 —
+`ALTER TABLE exchange_detail DROP COLUMN method;`. 실행 전엔 `POST /api/posts/exchange`가
+매번 `Field 'method' doesn't have a default value`로 실패했음.)
+
+새로 스키마를 바꾸는 PR이 머지될 때마다 이 섹션에 다음 항목을 추가하는 걸 관례로 합니다.
