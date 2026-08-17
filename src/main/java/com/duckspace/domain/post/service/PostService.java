@@ -18,6 +18,7 @@ import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
 import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
+import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostIdCount;
 import com.duckspace.domain.post.repository.PostImageRepository;
@@ -34,6 +35,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -57,6 +59,7 @@ public class PostService {
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
     private final ExchangeApplicationWriter exchangeApplicationWriter;
+    private final PendingPostImageRepository pendingPostImageRepository;
 
     @Transactional
     public Long createCasual(Long userId, CasualPostRequest request) {
@@ -105,6 +108,7 @@ public class PostService {
         WantedItemRequest wanted = request.wantedItem();
         tradeItemRepository.save(TradeItem.wanted(detail, wanted.imageUrl(), wanted.itemName(), wanted.brand()));
 
+        claimImages(Arrays.asList(offered.imageUrl(), wanted.imageUrl()));
         return post.getId();
     }
 
@@ -274,6 +278,18 @@ public class PostService {
         int order = 0;
         for (String imageUrl : imageUrls) {
             postImageRepository.save(new PostImage(post, imageUrl, order++));
+        }
+        claimImages(imageUrls);
+    }
+
+    /**
+     * PostImageService.upload가 남겨둔 "아직 안 쓰였다" 표시를 지웁니다. 실제 글 작성에 쓰인
+     * URL만 넘기세요 — null/blank는 걸러서 무시합니다(교환 글은 imageUrl이 선택이라 흔합니다).
+     */
+    private void claimImages(List<String> imageUrls) {
+        List<String> used = imageUrls.stream().filter(url -> url != null && !url.isBlank()).toList();
+        if (!used.isEmpty()) {
+            pendingPostImageRepository.deleteByImageUrlIn(used);
         }
     }
 

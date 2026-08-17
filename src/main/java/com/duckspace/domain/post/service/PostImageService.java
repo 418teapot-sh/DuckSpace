@@ -2,7 +2,9 @@ package com.duckspace.domain.post.service;
 
 import com.duckspace.domain.exhibition.image.ImageInspector;
 import com.duckspace.domain.exhibition.image.ImageStorage;
+import com.duckspace.domain.post.entity.PendingPostImage;
 import com.duckspace.domain.post.exception.PostErrorCode;
+import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ public class PostImageService {
     private static final Set<String> SUPPORTED_TYPES = Set.of("image/jpeg", "image/jpg", "image/png");
 
     private final ImageStorage imageStorage;
+    private final PendingPostImageRepository pendingPostImageRepository;
 
     public String upload(Long userId, MultipartFile image) {
         byte[] data = readBytes(image);
@@ -35,7 +38,10 @@ public class PostImageService {
                 .orElseThrow(() -> new BusinessException(PostErrorCode.UNSUPPORTED_IMAGE_TYPE));
         String key = "posts/%d/%s.%s".formatted(userId, UUID.randomUUID(), format);
 
-        return imageStorage.upload(key, data, image.getContentType());
+        String imageUrl = imageStorage.upload(key, data, image.getContentType());
+        // 이 시점엔 아직 어느 글에도 안 쓰였습니다. PostService가 실제로 글에 담을 때 이 표시를 지웁니다.
+        pendingPostImageRepository.save(new PendingPostImage(userId, imageUrl));
+        return imageUrl;
     }
 
     /** ExhibitionItemService.validateImage와 같은 이유로 Content-Type 헤더뿐 아니라 실제 바이트도 확인합니다. */

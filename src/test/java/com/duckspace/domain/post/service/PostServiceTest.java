@@ -16,6 +16,7 @@ import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
 import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
+import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostImageRepository;
 import com.duckspace.domain.post.repository.PostLikeRepository;
@@ -67,6 +68,8 @@ class PostServiceTest {
     private UserRepository userRepository;
     @Mock
     private ExchangeApplicationWriter exchangeApplicationWriter;
+    @Mock
+    private PendingPostImageRepository pendingPostImageRepository;
 
     private PostService postService;
 
@@ -74,7 +77,8 @@ class PostServiceTest {
     void setUp() {
         postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
                 exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
-                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter);
+                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter,
+                pendingPostImageRepository);
     }
 
     private Post casualPost(Long id, Long userId) {
@@ -107,6 +111,34 @@ class PostServiceTest {
             assertThat(postId).isEqualTo(1L);
             verify(postImageRepository, times(2)).save(any());
             verify(postHashtagRepository, times(1)).save(any());
+        }
+
+        @Test
+        void 이미지를_쓰면_대기중_표시를_지운다() {
+            // PostImageService.upload가 남겨둔 "아직 안 쓰였다" 표시를, 실제로 글에 담기면 지워야
+            // PendingPostImageCleaner가 방금 쓴 이미지까지 고아로 오인해 지우지 않습니다.
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+
+            postService.createCasual(10L, new CasualPostRequest("본문", List.of("a.png", "b.png"), null));
+
+            verify(pendingPostImageRepository).deleteByImageUrlIn(List.of("a.png", "b.png"));
+        }
+
+        @Test
+        void 이미지가_없으면_대기중_표시를_건드리지_않는다() {
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+
+            postService.createCasual(10L, new CasualPostRequest("본문", null, null));
+
+            verify(pendingPostImageRepository, never()).deleteByImageUrlIn(any());
         }
 
         @Test
@@ -174,6 +206,47 @@ class PostServiceTest {
 
             assertThat(postId).isEqualTo(1L);
             verify(tradeItemRepository, times(2)).save(any());
+        }
+
+        @Test
+        void offeredItem과_wantedItem의_이미지_대기중_표시를_지운다() {
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+            given(exchangeDetailRepository.save(any(ExchangeDetail.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+            ExchangePostRequest request = new ExchangePostRequest(
+                    "제목", "본문",
+                    new OfferedItemRequest("offer.png", "인형", "브랜드A", ItemCondition.UNOPENED),
+                    new WantedItemRequest("want.png", "키링", "브랜드B"),
+                    null, null, null, null);
+
+            postService.createExchange(10L, request);
+
+            verify(pendingPostImageRepository).deleteByImageUrlIn(List.of("offer.png", "want.png"));
+        }
+
+        @Test
+        void wantedItem에_이미지가_없어도_offeredItem_이미지는_대기중_표시를_지운다() {
+            // wantedItem.imageUrl은 선택이라 null이 흔합니다. null까지 리포지토리로 넘기면 안 됩니다.
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+            given(exchangeDetailRepository.save(any(ExchangeDetail.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+            ExchangePostRequest request = new ExchangePostRequest(
+                    "제목", "본문",
+                    new OfferedItemRequest("offer.png", "인형", "브랜드A", ItemCondition.UNOPENED),
+                    new WantedItemRequest(null, "키링", null),
+                    null, null, null, null);
+
+            postService.createExchange(10L, request);
+
+            verify(pendingPostImageRepository).deleteByImageUrlIn(List.of("offer.png"));
         }
     }
 
