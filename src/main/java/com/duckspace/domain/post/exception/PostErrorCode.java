@@ -31,6 +31,10 @@ public enum PostErrorCode implements BaseErrorCode {
     INVALID_APPLICATION_FILTER(HttpStatus.BAD_REQUEST, "filter는 sent 또는 received만 가능합니다."),
     ALREADY_APPLIED(HttpStatus.CONFLICT, "이미 신청한 게시글입니다."),
     ANOTHER_APPLICATION_ALREADY_ACCEPTED(HttpStatus.CONFLICT, "이미 다른 신청이 진행중입니다."),
+
+    EMPTY_IMAGE(HttpStatus.BAD_REQUEST, "이미지 파일이 비어 있습니다."),
+    UNSUPPORTED_IMAGE_TYPE(HttpStatus.BAD_REQUEST, "JPG 또는 PNG 이미지만 올릴 수 있습니다."),
+    IMAGE_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 업로드에 실패했습니다."),
     ;
 
     private final HttpStatus status;
