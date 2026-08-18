@@ -44,7 +44,7 @@ public class ProfileImageService {
     public String upload(Long userId, MultipartFile image) {
         validateNotEmpty(image);
         byte[] data = readBytes(image);
-        validateFormat(image, data);
+        String format = validateAndDetectFormat(image, data);
 
         // 존재하지 않는 유저에 업로드했다가 뒤늦게 실패하면 S3에 고아 파일만 남으므로,
         // 무거운 업로드 전에 먼저 확인합니다.
@@ -52,8 +52,6 @@ public class ProfileImageService {
             throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
         }
 
-        String format = ImageInspector.detectFormat(data)
-                .orElseThrow(() -> new BusinessException(UserErrorCode.UNSUPPORTED_IMAGE_TYPE));
         String key = "users/%d/%s.%s".formatted(userId, UUID.randomUUID(), format);
         // 클라이언트가 보낸 Content-Type 헤더가 아니라 바이트로 판별한 실제 포맷을 씁니다.
         // 헤더는 자칭일 뿐이라 어긋나면(예: PNG인데 image/jpg로 보냄) S3에 잘못된
@@ -78,8 +76,12 @@ public class ProfileImageService {
         }
     }
 
-    /** ExhibitionItemService/PostImageService와 같은 이유로 Content-Type 헤더뿐 아니라 실제 바이트도 확인합니다. */
-    private static void validateFormat(MultipartFile image, byte[] data) {
+    /**
+     * ExhibitionItemService/PostImageService와 같은 이유로 Content-Type 헤더뿐 아니라 실제
+     * 바이트도 확인합니다. {@code detectFormat}을 한 번만 불러 판별 결과를 검증과 키 생성
+     * 양쪽에 재사용합니다 — 두 번 부르면 같은 바이트를 매 요청마다 두 번 디코딩하게 됩니다.
+     */
+    private static String validateAndDetectFormat(MultipartFile image, byte[] data) {
         if (data.length == 0) {
             throw new BusinessException(UserErrorCode.EMPTY_IMAGE);
         }
@@ -87,8 +89,8 @@ public class ProfileImageService {
         if (contentType == null || !SUPPORTED_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
             throw new BusinessException(UserErrorCode.UNSUPPORTED_IMAGE_TYPE);
         }
-        if (!ImageInspector.isSupported(data)) {
-            throw new BusinessException(UserErrorCode.UNSUPPORTED_IMAGE_TYPE);
-        }
+        return ImageInspector.detectFormat(data)
+                .filter(ImageInspector.SUPPORTED_FORMATS::contains)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.UNSUPPORTED_IMAGE_TYPE));
     }
 }
