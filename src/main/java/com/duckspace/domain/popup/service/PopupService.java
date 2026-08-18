@@ -14,12 +14,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PopupService {
+
+    // 서버(JVM) 기본 타임존에 기대지 않도록 명시적으로 Asia/Seoul 기준 현재 날짜를 씁니다. (BannerService와 동일한 이유)
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final PopupRepository popupRepository;
     private final OpenAiSummaryClient openAiSummaryClient;
@@ -33,7 +37,7 @@ public class PopupService {
 
     /** 홈 화면 "다가오는 팝업" 섹션용 — 종료된 팝업은 제외합니다. */
     public List<PopupSummaryResponse> getUpcomingPopups() {
-        return popupRepository.findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now())
+        return popupRepository.findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now(SERVICE_ZONE))
                 .stream()
                 .map(PopupSummaryResponse::from)
                 .toList();
