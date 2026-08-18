@@ -31,8 +31,12 @@ import java.util.Objects;
 @Entity
 @Table(
         name = "goods_image",
-        // 보관함 조회가 user_id 기준 최신순 커서라 (user_id, id) 로 둡니다.
-        indexes = @Index(name = "idx_goods_image_user", columnList = "user_id, id")
+        indexes = {
+                // 보관함 조회가 user_id 기준 최신순 커서라 (user_id, id) 로 둡니다.
+                @Index(name = "idx_goods_image_user", columnList = "user_id, id"),
+                // 공유 이미지 삭제 보호가 URL 로 소유를 확인합니다. 없으면 삭제마다 풀스캔입니다.
+                @Index(name = "idx_goods_image_image_url", columnList = "image_url")
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

@@ -260,7 +260,7 @@ class ExhibitionImageProcessorTest {
         handle();
 
         // 회수하지 않으면 DB 어디에도 주소가 없는 객체가 영원히 남습니다.
-        verify(imageCleanup).delete("https://cdn/result.png");
+        verify(imageCleanup).deleteOrphan("https://cdn/result.png");
     }
 
     @Test
@@ -274,7 +274,7 @@ class ExhibitionImageProcessorTest {
 
         handle();
 
-        verify(imageCleanup).delete("https://cdn/result.png");
+        verify(imageCleanup).deleteOrphan("https://cdn/result.png");
     }
 
     @Test
@@ -297,7 +297,7 @@ class ExhibitionImageProcessorTest {
 
         handle();
 
-        verify(imageCleanup).delete("https://cdn/copy.jpeg");
+        verify(imageCleanup).deleteOrphan("https://cdn/copy.jpeg");
     }
 
     // ------------------------------------------------------------------
@@ -328,7 +328,7 @@ class ExhibitionImageProcessorTest {
 
         processor.handle(new GoodsImageUploadedEvent(77L, 3L, imageBytes, "goods.png"));
 
-        verify(imageCleanup).delete("https://cdn/lib.png");
+        verify(imageCleanup).deleteOrphan("https://cdn/lib.png");
     }
 
     @Test
@@ -419,7 +419,7 @@ class ExhibitionImageProcessorTest {
 
         handleRetry();
 
-        verify(imageCleanup).delete("https://cdn/retried.png");
+        verify(imageCleanup).deleteOrphan("https://cdn/retried.png");
         verify(imageCleanup, never()).delete(SOURCE_URL);
     }
 

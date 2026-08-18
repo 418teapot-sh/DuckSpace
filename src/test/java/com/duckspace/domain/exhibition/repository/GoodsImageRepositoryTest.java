@@ -57,7 +57,8 @@ class GoodsImageRepositoryTest {
         ready(1L, "https://cdn/lib.png");
         entityManager.flush();
 
-        assertThat(goodsImageRepository.existsByImageUrl("https://cdn/lib.png")).isTrue();
-        assertThat(goodsImageRepository.existsByImageUrl("https://cdn/none.png")).isFalse();
+        assertThat(goodsImageRepository.findReferencedUrls(
+                List.of("https://cdn/lib.png", "https://cdn/none.png")))
+                .containsExactly("https://cdn/lib.png");
     }
 }

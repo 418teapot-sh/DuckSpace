@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,6 +31,7 @@ public interface GoodsImageRepository extends JpaRepository<GoodsImage, Long> {
     @Query("select g from GoodsImage g where g.id = :imageId")
     Optional<GoodsImage> findByIdForUpdate(@Param("imageId") Long imageId);
 
-    /** 공유 이미지 삭제 보호용 — 이 URL 이 보관함 소유인지. ({@code ImageCleanup} 이 삭제 직전에 씁니다) */
-    boolean existsByImageUrl(String imageUrl);
+    /** 삭제 후보 중 <b>보관함이 소유한 URL</b> 만 골라냅니다. ({@code ImageCleanup} 전용, in 절 배치) */
+    @Query("select g.imageUrl from GoodsImage g where g.imageUrl in :urls")
+    List<String> findReferencedUrls(@Param("urls") Collection<String> urls);
 }

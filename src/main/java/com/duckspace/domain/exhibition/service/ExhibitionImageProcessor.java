@@ -221,20 +221,23 @@ public class ExhibitionImageProcessor {
             } catch (Exception e) {
                 // 기록에 실패해 방금 올린 처리본을 아무도 가리키지 않게 됐습니다.
                 // 여기서 회수하지 않으면 DB 어디에도 주소가 없는 고아 객체로 영원히 남습니다.
-                imageCleanup.delete(url);
+                // (이 URL 은 방금 만든 것이라 참조 확인이 불필요합니다 — deleteOrphan)
+                imageCleanup.deleteOrphan(url);
                 throw e;
             }
             if (!written) {
                 // 예외가 아니라 조용한 no-op(처리 중 삭제됨 · 이미 처리 끝남)도 같은 상황입니다.
                 // 이때 기존 원본(existingSourceUrl)은 지우지 않습니다 — no-op 의 이유를 모르는 채로
                 // 지우면, 이미 FAILED 로 끝난 대상이 가리키는 원본을 끊어버릴 수 있습니다.
-                imageCleanup.delete(url);
+                imageCleanup.deleteOrphan(url);
                 return;
             }
             log.info("이미지 처리 완료. id={}", logId);
 
             // 처리본이 원본을 대체했으므로 남겨뒀던 원본은 지웁니다. 상태를 먼저 바꾼 뒤에
             // 지워야, 삭제가 실패해도 화면에는 정상 이미지가 보입니다.
+            // 원본 URL 은 배치·보관함이 참조할 수 있어 가드가 있는 delete 를 씁니다.
+            // (확인·삭제 모두 정리 실행기로 넘어가므로 처리 스레드를 붙잡지 않습니다)
             imageCleanup.delete(existingSourceUrl);
 
         } catch (InterruptedException e) {
@@ -270,7 +273,8 @@ public class ExhibitionImageProcessor {
             written = false;
         }
         if (!written && freshlyStored && keep != null) {
-            imageCleanup.delete(keep);
+            // 방금 새로 저장한 원본 사본이라 아무 행도 가리킨 적 없습니다 — 참조 확인 불필요.
+            imageCleanup.deleteOrphan(keep);
         }
     }
 
