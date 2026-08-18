@@ -39,10 +39,12 @@ public class PopupService {
     }
 
     /** 홈 화면 "다가오는 팝업" 섹션용 — 종료된 팝업은 제외합니다. */
-    public List<PopupSummaryResponse> getUpcomingPopups() {
-        return popupRepository.findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now(ServiceZone.ZONE))
-                .stream()
-                .map(popup -> PopupSummaryResponse.from(popup, false))
+    public List<PopupSummaryResponse> getUpcomingPopups(Long viewerId) {
+        List<Popup> popups = popupRepository
+                .findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now(ServiceZone.ZONE));
+        Set<Long> likedIds = likedPopupIds(viewerId, popups);
+        return popups.stream()
+                .map(popup -> PopupSummaryResponse.from(popup, likedIds.contains(popup.getId())))
                 .toList();
     }
 
@@ -55,7 +57,7 @@ public class PopupService {
     public List<PopupSummaryResponse> getAllPopupsForAdmin() {
         return popupRepository.findAllByOrderByStartDateAsc()
                 .stream()
-                .map(popup -> PopupSummaryResponse.from(popup, false))
+                .map(PopupSummaryResponse::from)
                 .toList();
     }
 
@@ -77,7 +79,7 @@ public class PopupService {
                 .aiSummary(aiSummary)
                 .build();
 
-        return PopupResponse.from(popupRepository.save(popup), false);
+        return PopupResponse.from(popupRepository.save(popup));
     }
 
     @Transactional
@@ -98,12 +100,14 @@ public class PopupService {
                 request.endDate(),
                 aiSummary
         );
-        return PopupResponse.from(popup, false);
+        return PopupResponse.from(popup);
     }
 
     @Transactional
     public void deletePopup(Long popupId) {
-        popupRepository.delete(getPopupOrThrow(popupId));
+        Popup popup = getPopupOrThrow(popupId);
+        popupLikeRepository.deleteByPopupId(popup.getId());
+        popupRepository.delete(popup);
     }
 
     private void validatePeriod(LocalDate startDate, LocalDate endDate) {

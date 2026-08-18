@@ -30,15 +30,13 @@ public class PopupController {
 
     @GetMapping("/api/popups")
     public ApiResponse<List<PopupSummaryResponse>> getPopups(@AuthenticationPrincipal AuthUser authUser) {
-        Long viewerId = authUser == null ? null : authUser.getUserId();
-        return ApiResponse.success(popupService.getPopups(viewerId));
+        return ApiResponse.success(popupService.getPopups(AuthUser.idOrNull(authUser)));
     }
 
     @GetMapping("/api/popups/{popupId}")
     public ApiResponse<PopupResponse> getPopup(@PathVariable Long popupId,
                                                 @AuthenticationPrincipal AuthUser authUser) {
-        Long viewerId = authUser == null ? null : authUser.getUserId();
-        return ApiResponse.success(popupService.getPopup(popupId, viewerId));
+        return ApiResponse.success(popupService.getPopup(popupId, AuthUser.idOrNull(authUser)));
     }
 
     @GetMapping("/api/popups/likes")
