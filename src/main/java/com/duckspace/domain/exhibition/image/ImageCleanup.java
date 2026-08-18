@@ -27,10 +27,11 @@ import java.util.concurrent.RejectedExecutionException;
  * 빠졌었습니다), 판단과 삭제 사이에 새 배치가 끼어드는 경합도 남습니다. 그래서 판단을 이 클래스
  * 한 곳으로 모으고, 시점도 <b>삭제 실행 직전(전용 실행기 안)</b>으로 고정합니다.
  *
- * <p><b>수용한 리스크:</b> 참조 확인과 스토리지 삭제 사이의 수 ms 창은 남습니다. 그 사이에
- * 같은 URL 이 새로 배치되면(정상 플로우가 아니라 삭제 예약된 원본 주소를 수동으로 배치하는
- * 경우뿐) 방금 배치된 그림이 깨질 수 있습니다. 완전히 닫으려면 참조 카운팅이 필요한데,
- * 창 크기와 발생 조건 대비 비용이 맞지 않아 여기서 멈췄습니다.
+ * <p><b>수용한 리스크:</b> 참조 확인과 스토리지 삭제 사이의 수 ms 창은 남습니다.
+ * {@code POST /items} 가 imageUrl 의 소유를 검증하지 않기 때문에, 같은 URL 에 대한 배치와
+ * 삭제가 겹치는 <b>정상 트래픽에서도</b> 이 창이 열려 방금 배치된 그림이 깨질 수 있습니다.
+ * 완전히 닫으려면 참조 카운팅(또는 배치 시점 잠금)이 필요한데, 창 크기 대비 비용이 맞지 않아
+ * 여기서 멈췄습니다.
  *
  * <p><b>모든 실제 삭제는 전용 실행기(cleanup executor)에서 돕니다.</b> 참조 확인(DB 쿼리)과
  * S3 왕복을 요청 스레드나 이미지 처리 스레드가 떠안지 않게 하기 위해서입니다 — 이미지
@@ -110,11 +111,19 @@ public class ImageCleanup {
         try {
             cleanupExecutor.execute(task);
         } catch (RejectedExecutionException e) {
-            // 큐가 가득 찼습니다. 정리를 통째로 건너뛰면 객체가 영영 남으므로,
-            // 느려지더라도 이 자리에서 실행합니다.
+            // 큐(200)가 가득 찼습니다. 여기서 버리면 파일이 영영 남으므로 이 자리에서 실행합니다.
+            // 호출자가 이미지 처리 스레드라면 그동안 붙잡히지만, 누수(영구)보다 지연(일시)을
+            // 택한 것입니다 — 대안인 "버리고 로그"는 복구 수단이 없습니다.
             log.warn("이미지 정리를 큐에 넣지 못해 즉시 처리합니다.");
             task.run();
         }
+    }
+
+    /** 참조 확인이 일시 오류로 실패했을 때 배치를 다시 시도하는 횟수(첫 시도 포함). */
+    private static final int MAX_ATTEMPTS = 3;
+
+    private void deleteUnreferenced(List<String> imageUrls) {
+        deleteUnreferenced(imageUrls, MAX_ATTEMPTS - 1);
     }
 
     /**
@@ -122,21 +131,33 @@ public class ImageCleanup {
      *
      * <p>URL 마다 exists 를 두 번씩 날리면 장식장 통째 삭제(최대 수십 장)에서 단일 스레드
      * 실행기를 오래 점유합니다. in 절 두 번이면 끝나는 일입니다.
+     *
+     * <p><b>참조 확인이 실패하면 지우지 않습니다</b> — 확인 없이 지우는 쪽이 더 위험합니다.
+     * 대신 배치를 큐 뒤로 다시 넣어 재시도하고(커넥션 풀 고갈 같은 일시 오류 대비), 끝내
+     * 실패하면 수동 회수가 가능하도록 대상 URL 전체를 에러 로그로 남깁니다.
      */
-    private void deleteUnreferenced(List<String> imageUrls) {
+    private void deleteUnreferenced(List<String> imageUrls, int retriesLeft) {
+        Set<String> referenced;
         try {
-            Set<String> referenced = new HashSet<>(exhibitionItemRepository.findReferencedUrls(imageUrls));
+            referenced = new HashSet<>(exhibitionItemRepository.findReferencedUrls(imageUrls));
             referenced.addAll(goodsImageRepository.findReferencedUrls(imageUrls));
-
-            for (String url : imageUrls) {
-                if (referenced.contains(url)) {
-                    log.info("아직 참조 중이라 파일을 남깁니다: {}", url);
-                } else {
-                    deleteQuietly(url);
-                }
-            }
         } catch (Exception e) {
-            log.warn("이미지 정리 실패 ({}건): {}", imageUrls.size(), e.toString());
+            if (retriesLeft > 0) {
+                log.warn("참조 확인 실패, 배치를 다시 시도합니다 ({}건, 남은 시도 {}): {}",
+                        imageUrls.size(), retriesLeft, e.toString());
+                submit(() -> deleteUnreferenced(imageUrls, retriesLeft - 1));
+            } else {
+                log.error("이미지 정리를 포기합니다. 수동 회수 대상: {}", imageUrls, e);
+            }
+            return;
+        }
+
+        for (String url : imageUrls) {
+            if (referenced.contains(url)) {
+                log.info("아직 참조 중이라 파일을 남깁니다: {}", url);
+            } else {
+                deleteQuietly(url);
+            }
         }
     }
 

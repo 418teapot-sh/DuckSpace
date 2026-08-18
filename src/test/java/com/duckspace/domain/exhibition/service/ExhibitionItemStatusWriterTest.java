@@ -53,7 +53,7 @@ class ExhibitionItemStatusWriterTest {
     @DisplayName("PENDING 이면 결과를 기록한다")
     void 처리중이면_기록한다() {
         ExhibitionItem item = itemWith(ItemStatus.PENDING, null);
-        given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
+        given(exhibitionItemRepository.findByIdForUpdate(ITEM_ID)).willReturn(Optional.of(item));
 
         boolean written = statusWriter.markReady(ITEM_ID, "https://cdn/result.png");
 
@@ -68,7 +68,7 @@ class ExhibitionItemStatusWriterTest {
         // 재시도가 두 번 접수돼 A 가 먼저 성공(READY + 원본 삭제)한 뒤,
         // B 가 사라진 원본을 못 찾아 실패로 돌아온 상황입니다.
         ExhibitionItem item = itemWith(ItemStatus.READY, "https://cdn/result.png");
-        given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
+        given(exhibitionItemRepository.findByIdForUpdate(ITEM_ID)).willReturn(Optional.of(item));
 
         boolean written = statusWriter.markFailed(ITEM_ID, "https://cdn/deleted-origin.png");
 
@@ -87,7 +87,7 @@ class ExhibitionItemStatusWriterTest {
     @DisplayName("이미 FAILED 면 뒤늦은 성공 결과도 무시한다")
     void 늦게_끝난_성공도_무시한다() {
         ExhibitionItem item = itemWith(ItemStatus.FAILED, "https://cdn/origin.png");
-        given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
+        given(exhibitionItemRepository.findByIdForUpdate(ITEM_ID)).willReturn(Optional.of(item));
 
         assertThat(statusWriter.markReady(ITEM_ID, "https://cdn/late.png")).isFalse();
         assertThat(item.getStatus()).isEqualTo(ItemStatus.FAILED);
@@ -96,7 +96,7 @@ class ExhibitionItemStatusWriterTest {
     @Test
     @DisplayName("처리 중에 삭제된 아이템이면 조용히 넘어간다")
     void 아이템이_없으면_아무것도_하지_않는다() {
-        given(exhibitionItemRepository.findById(ITEM_ID)).willReturn(Optional.empty());
+        given(exhibitionItemRepository.findByIdForUpdate(ITEM_ID)).willReturn(Optional.empty());
 
         assertThat(statusWriter.markReady(ITEM_ID, "https://cdn/result.png")).isFalse();   // 예외 없음
     }

@@ -44,8 +44,14 @@ class GoodsImageStatusWriter {
         }).orElse(false);
     }
 
+    /**
+     * <b>잠그고 읽는 이유</b>: 잠금 없이 읽으면 동시에 끝난 두 작업이 둘 다 {@code PENDING} 을
+     * 보고 둘 다 기록해, 늦게 커밋한 쪽이 먼저 커밋한 결과를 덮습니다. 덮인 쪽 이미지는
+     * {@code written=true} 라 회수 로직도 못 잡는 영구 고아가 됩니다.
+     * ({@link ExhibitionItemStatusWriter} 와 같은 이유)
+     */
     private Optional<GoodsImage> pending(Long imageId) {
-        Optional<GoodsImage> found = goodsImageRepository.findById(imageId);
+        Optional<GoodsImage> found = goodsImageRepository.findByIdForUpdate(imageId);
         if (found.isEmpty()) {
             log.info("상태를 기록할 보관함 사진이 이미 없습니다. imageId={}", imageId);
             return Optional.empty();

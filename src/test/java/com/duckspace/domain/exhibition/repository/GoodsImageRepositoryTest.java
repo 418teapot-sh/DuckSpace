@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,5 +61,21 @@ class GoodsImageRepositoryTest {
         assertThat(goodsImageRepository.findReferencedUrls(
                 List.of("https://cdn/lib.png", "https://cdn/none.png")))
                 .containsExactly("https://cdn/lib.png");
+    }
+
+    @Test
+    @DisplayName("touchUpdatedAt 은 더티체킹 없이도 updatedAt 을 실제로 갱신한다")
+    void 방치_시계_되감기() {
+        // 재시도가 PENDING→PENDING 일 때 값 변경이 없어 UPDATE 가 생략되는 걸
+        // 우회하는 장치라, 실제 DB 에 반영되는지가 핵심입니다.
+        GoodsImage image = ready(1L, "https://cdn/1.png");
+        entityManager.flush();
+
+        LocalDateTime marker = LocalDateTime.of(2030, 1, 1, 12, 0);
+        goodsImageRepository.touchUpdatedAt(image.getId(), marker);
+        entityManager.clear();   // 벌크 UPDATE 는 영속성 컨텍스트를 건너뛰므로 다시 읽습니다.
+
+        assertThat(goodsImageRepository.findById(image.getId()).orElseThrow().getUpdatedAt())
+                .isEqualTo(marker);
     }
 }

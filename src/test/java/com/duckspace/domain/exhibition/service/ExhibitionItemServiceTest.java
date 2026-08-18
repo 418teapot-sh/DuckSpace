@@ -513,7 +513,7 @@ class ExhibitionItemServiceTest {
         @Test
         void 원본을_다시_태우도록_이벤트를_발행한다() {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findByIdForUpdate(5L))
+            given(exhibitionItemRepository.findOwnedForUpdate(5L, EXHIBITION_ID))
                     .willReturn(Optional.of(failedItem("https://cdn/origin.png")));
 
             ExhibitionItemResponse response = exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
@@ -533,7 +533,7 @@ class ExhibitionItemServiceTest {
         void 원본_주소를_지우지_않는다() {
             ExhibitionItem target = failedItem("https://cdn/origin.png");
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(target));
+            given(exhibitionItemRepository.findOwnedForUpdate(5L, EXHIBITION_ID)).willReturn(Optional.of(target));
 
             exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
 
@@ -552,12 +552,16 @@ class ExhibitionItemServiceTest {
             ReflectionTestUtils.setField(stuck, "updatedAt", java.time.LocalDateTime.now().minusMinutes(20));
 
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(stuck));
+            given(exhibitionItemRepository.findOwnedForUpdate(5L, EXHIBITION_ID)).willReturn(Optional.of(stuck));
 
             ExhibitionItemResponse response = exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER);
 
             assertThat(response.status()).isEqualTo(ItemStatus.PENDING);
             verify(eventPublisher).publishEvent(any(ItemImageRetryRequestedEvent.class));
+            // PENDING→PENDING 은 더티체킹으로는 UPDATE 가 안 나가 방치 시계가 그대로 남습니다.
+            // 명시적으로 되감지 않으면 연타마다 재처리가 중복 접수됩니다.
+            verify(exhibitionItemRepository).touchUpdatedAt(org.mockito.ArgumentMatchers.eq(5L),
+                    any(java.time.LocalDateTime.class));
         }
 
         @Test
@@ -570,7 +574,7 @@ class ExhibitionItemServiceTest {
             ReflectionTestUtils.setField(processing, "updatedAt", java.time.LocalDateTime.now());
 
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(processing));
+            given(exhibitionItemRepository.findOwnedForUpdate(5L, EXHIBITION_ID)).willReturn(Optional.of(processing));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
@@ -581,7 +585,7 @@ class ExhibitionItemServiceTest {
         @Test
         void 실패한_굿즈가_아니면_거부한다() {
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(item(5L)));   // READY
+            given(exhibitionItemRepository.findOwnedForUpdate(5L, EXHIBITION_ID)).willReturn(Optional.of(item(5L)));   // READY
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));
@@ -595,7 +599,7 @@ class ExhibitionItemServiceTest {
         void 남겨둔_원본이_없으면_다시_올리라고_알려준다() {
             // 큐가 가득 차 접수 단계에서 실패한 경우 imageUrl 이 비어 있습니다.
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
-            given(exhibitionItemRepository.findByIdForUpdate(5L)).willReturn(Optional.of(failedItem(null)));
+            given(exhibitionItemRepository.findOwnedForUpdate(5L, EXHIBITION_ID)).willReturn(Optional.of(failedItem(null)));
 
             BusinessException exception = assertThrows(BusinessException.class,
                     () -> exhibitionItemService.retry(EXHIBITION_ID, 5L, OWNER));

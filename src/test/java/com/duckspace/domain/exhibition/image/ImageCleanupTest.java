@@ -105,6 +105,33 @@ class ImageCleanupTest {
     }
 
     @Test
+    @DisplayName("참조 확인이 일시 오류면 배치를 다시 시도해 끝내 지운다")
+    void 참조_확인_일시_오류는_재시도() {
+        // 커넥션 풀 고갈 같은 일시 오류 한 번에 배치 전체가 조용히 사라지면
+        // 그 파일들은 회수 기회 없이 영구 누수가 됩니다.
+        given(exhibitionItemRepository.findReferencedUrls(List.of(URL)))
+                .willThrow(new RuntimeException("pool exhausted"))
+                .willReturn(List.of());
+        given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+
+        imageCleanup.deleteAfterCommit(URL);
+
+        verify(imageStorage).deleteByUrl(URL);
+    }
+
+    @Test
+    @DisplayName("참조 확인이 계속 실패하면 지우지 않고 물러난다")
+    void 참조_확인_계속_실패면_삭제하지_않는다() {
+        // 참조를 모르는 채로 지우는 쪽이 더 위험합니다. 남기고 에러 로그(수동 회수용)로 끝냅니다.
+        given(exhibitionItemRepository.findReferencedUrls(List.of(URL)))
+                .willThrow(new RuntimeException("db down"));
+
+        imageCleanup.deleteAfterCommit(URL);   // 예외가 밖으로 새지 않아야 합니다.
+
+        verify(imageStorage, never()).deleteByUrl(URL);
+    }
+
+    @Test
     @DisplayName("목록 삭제는 URL 마다 exists 를 날리지 않고 배치 쿼리 두 번으로 거른다")
     void 목록은_배치_쿼리로_판단() {
         List<String> urls = List.of("https://cdn/keep.png", "https://cdn/gone.png");

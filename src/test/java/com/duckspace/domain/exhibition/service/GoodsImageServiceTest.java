@@ -154,7 +154,7 @@ class GoodsImageServiceTest {
 
         @Test
         void 실패한_사진은_원본을_다시_태운다() {
-            given(goodsImageRepository.findByIdForUpdate(IMAGE_ID))
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME))
                     .willReturn(Optional.of(image(ItemStatus.FAILED, "https://cdn/origin.png")));
 
             GoodsImageResponse response = goodsImageService.retry(IMAGE_ID, ME);
@@ -170,7 +170,7 @@ class GoodsImageServiceTest {
         void 갓_접수된_PENDING은_거부하고_방치된_PENDING은_허용한다() {
             GoodsImage fresh = image(ItemStatus.PENDING, "https://cdn/origin.png");
             ReflectionTestUtils.setField(fresh, "updatedAt", LocalDateTime.now());
-            given(goodsImageRepository.findByIdForUpdate(IMAGE_ID)).willReturn(Optional.of(fresh));
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME)).willReturn(Optional.of(fresh));
 
             assertThat(assertThrows(BusinessException.class,
                     () -> goodsImageService.retry(IMAGE_ID, ME)).getErrorCode())
@@ -179,11 +179,16 @@ class GoodsImageServiceTest {
             // 강제 종료로 20분째 방치된 PENDING 은 실패로 간주하고 열어줍니다.
             ReflectionTestUtils.setField(fresh, "updatedAt", LocalDateTime.now().minusMinutes(20));
             assertThat(goodsImageService.retry(IMAGE_ID, ME).status()).isEqualTo(ItemStatus.PENDING);
+
+            // PENDING→PENDING 은 바뀐 값이 없어 더티체킹으로는 UPDATE 가 안 나갑니다.
+            // 방치 시계(updatedAt)를 명시적으로 되감지 않으면 연타마다 재처리가 중복 접수됩니다.
+            verify(goodsImageRepository).touchUpdatedAt(org.mockito.ArgumentMatchers.eq(IMAGE_ID),
+                    org.mockito.ArgumentMatchers.any(LocalDateTime.class));
         }
 
         @Test
         void 원본이_없으면_다시_올리라고_알려준다() {
-            given(goodsImageRepository.findByIdForUpdate(IMAGE_ID))
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME))
                     .willReturn(Optional.of(image(ItemStatus.FAILED, null)));
 
             assertThat(assertThrows(BusinessException.class,

@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -37,12 +36,6 @@ public class GoodsImageService {
 
     private static final int MAX_PAGE_SIZE = 50;
     private static final int DEFAULT_PAGE_SIZE = 20;
-
-    /**
-     * 이보다 오래 PENDING 이면 처리가 끊긴 것으로 보고 재시도를 허용합니다.
-     * ({@code ExhibitionItemService.ABANDONED_PENDING_THRESHOLD} 와 같은 값·같은 근거)
-     */
-    private static final Duration ABANDONED_PENDING_THRESHOLD = Duration.ofMinutes(15);
 
     private final GoodsImageRepository goodsImageRepository;
     private final ExhibitionItemRepository exhibitionItemRepository;
@@ -82,12 +75,10 @@ public class GoodsImageService {
                 ? goodsImageRepository.findByUserIdOrderByIdDesc(userId, pageable)
                 : goodsImageRepository.findByUserIdAndIdLessThanOrderByIdDesc(userId, cursor, pageable);
 
-        boolean hasNext = found.size() > pageSize;
-        List<GoodsImage> page = hasNext ? found.subList(0, pageSize) : found;
-        Long nextCursor = hasNext ? page.get(page.size() - 1).getId() : null;
-
+        Paging.Slice<GoodsImage> sliced = Paging.slice(found, pageSize, GoodsImage::getId);
         return new GoodsImagePageResponse(
-                page.stream().map(GoodsImageResponse::from).toList(), nextCursor, hasNext);
+                sliced.page().stream().map(GoodsImageResponse::from).toList(),
+                sliced.nextCursor(), sliced.hasNext());
     }
 
     /**
@@ -96,11 +87,11 @@ public class GoodsImageService {
      */
     @Transactional
     public GoodsImageResponse retry(Long imageId, Long userId) {
-        GoodsImage image = goodsImageRepository.findByIdForUpdate(imageId)
-                .filter(found -> found.belongsTo(userId))
+        GoodsImage image = goodsImageRepository.findOwnedForUpdate(imageId, userId)
                 .orElseThrow(() -> new BusinessException(ExhibitionErrorCode.IMAGE_NOT_FOUND));
 
-        if (image.getStatus() != ItemStatus.FAILED && !isAbandonedPending(image)) {
+        if (image.getStatus() != ItemStatus.FAILED
+                && !AbandonedPending.isAbandoned(image.getStatus(), image.getUpdatedAt())) {
             throw new BusinessException(ExhibitionErrorCode.IMAGE_NOT_RETRYABLE);
         }
         String source = image.getImageUrl();
@@ -109,6 +100,9 @@ public class GoodsImageService {
         }
 
         image.markPending();
+        // 이미 PENDING(방치)이었다면 markPending 이 no-op 이라 updatedAt 이 그대로 남고,
+        // 그러면 계속 "방치됨" 으로 보여 연타마다 재처리가 중복 접수됩니다. 시계를 되감습니다.
+        goodsImageRepository.touchUpdatedAt(image.getId(), LocalDateTime.now());
         eventPublisher.publishEvent(new GoodsImageRetryRequestedEvent(image.getId(), userId, source));
 
         return GoodsImageResponse.from(image);
@@ -141,9 +135,4 @@ public class GoodsImageService {
                 .orElseThrow(() -> new BusinessException(ExhibitionErrorCode.IMAGE_NOT_FOUND));
     }
 
-    private static boolean isAbandonedPending(GoodsImage image) {
-        return image.getStatus() == ItemStatus.PENDING
-                && image.getUpdatedAt() != null
-                && image.getUpdatedAt().isBefore(LocalDateTime.now().minus(ABANDONED_PENDING_THRESHOLD));
-    }
 }
