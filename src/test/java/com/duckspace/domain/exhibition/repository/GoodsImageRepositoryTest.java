@@ -59,9 +59,5 @@ class GoodsImageRepositoryTest {
 
         assertThat(goodsImageRepository.existsByImageUrl("https://cdn/lib.png")).isTrue();
         assertThat(goodsImageRepository.existsByImageUrl("https://cdn/none.png")).isFalse();
-
-        assertThat(goodsImageRepository.findExistingUrls(
-                List.of("https://cdn/lib.png", "https://cdn/none.png")))
-                .containsExactly("https://cdn/lib.png");
     }
 }

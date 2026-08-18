@@ -48,19 +48,11 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
 
     void deleteByExhibitionId(Long exhibitionId);
 
-    /** 보관함 삭제 보호용 — 이 URL 을 배치해 둔 굿즈가 있는지. */
+    /**
+     * 공유 이미지 삭제 보호용 — 이 URL 을 배치해 둔 굿즈가 있는지.
+     * ({@code ImageCleanup} 이 삭제 직전에, {@code GoodsImageService} 가 409 판단에 씁니다)
+     */
     boolean existsByImageUrl(String imageUrl);
-
-    /** 굿즈 삭제 시, 같은 URL 을 쓰는 다른 굿즈가 남아 있으면 파일을 지우면 안 됩니다. */
-    boolean existsByImageUrlAndIdNot(String imageUrl, Long id);
-
-    /** 장식장 통째 삭제 시, 다른 장식장의 굿즈가 쓰고 있어 지우면 안 되는 URL 을 골라냅니다. */
-    @Query("""
-            select distinct i.imageUrl from ExhibitionItem i
-            where i.imageUrl in :urls and i.exhibition.id <> :exhibitionId
-            """)
-    List<String> findUrlsUsedByOtherExhibitions(@Param("urls") Collection<String> urls,
-                                                 @Param("exhibitionId") Long exhibitionId);
 
     /**
      * 장식장을 통째로 지우기 <b>전에</b> 정리할 이미지 주소만 모읍니다.

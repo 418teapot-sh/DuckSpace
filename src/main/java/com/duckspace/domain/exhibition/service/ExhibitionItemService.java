@@ -12,7 +12,6 @@ import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.exhibition.image.MultipartImageValidator;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
-import com.duckspace.domain.exhibition.repository.GoodsImageRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +39,6 @@ public class ExhibitionItemService {
     private static final Duration ABANDONED_PENDING_THRESHOLD = Duration.ofMinutes(15);
 
     private final ExhibitionItemRepository exhibitionItemRepository;
-    private final GoodsImageRepository goodsImageRepository;
     private final ExhibitionService exhibitionService;
     private final ImageCleanup imageCleanup;
     private final ApplicationEventPublisher eventPublisher;
@@ -197,18 +195,10 @@ public class ExhibitionItemService {
         exhibitionService.getOwnedExhibition(exhibitionId, userId);
         ExhibitionItem item = getItemOf(exhibitionId, itemId);
 
-        // 파일은 이 굿즈만 쓰고 있을 때만 지웁니다. 보관함이 소유했거나(배치 원본)
-        // 같은 URL 을 재사용한 다른 굿즈가 있으면, 지우는 순간 그쪽 그림이 깨집니다.
-        String url = item.getImageUrl();
-        boolean deletable = url != null
-                && !goodsImageRepository.existsByImageUrl(url)
-                && !exhibitionItemRepository.existsByImageUrlAndIdNot(url, item.getId());
-
         exhibitionItemRepository.delete(item);
-        if (deletable) {
-            // DB 행만 지우면 S3 객체가 그대로 남습니다.
-            imageCleanup.deleteAfterCommit(url);
-        }
+        // 공유 여부(보관함 소유·다른 굿즈 재사용)는 ImageCleanup 이 삭제 직전에 판단합니다.
+        // 여기서 미리 판단하면 판단과 삭제 사이에 새 배치가 끼어드는 경합이 남습니다.
+        imageCleanup.deleteAfterCommit(item.getImageUrl());
     }
 
     /** 다른 장식장의 굿즈 id 를 넣어도 건드려지지 않도록 확인합니다. */

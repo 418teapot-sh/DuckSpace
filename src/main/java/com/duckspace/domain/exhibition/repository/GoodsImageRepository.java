@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,10 +30,6 @@ public interface GoodsImageRepository extends JpaRepository<GoodsImage, Long> {
     @Query("select g from GoodsImage g where g.id = :imageId")
     Optional<GoodsImage> findByIdForUpdate(@Param("imageId") Long imageId);
 
-    /** 굿즈 삭제 시 이 URL 이 보관함 소유인지 확인하는 데 씁니다. 소유면 파일을 지우면 안 됩니다. */
+    /** 공유 이미지 삭제 보호용 — 이 URL 이 보관함 소유인지. ({@code ImageCleanup} 이 삭제 직전에 씁니다) */
     boolean existsByImageUrl(String imageUrl);
-
-    /** 장식장 통째 삭제 시, 지우면 안 되는(보관함이 소유한) URL 을 한 번에 골라냅니다. */
-    @Query("select g.imageUrl from GoodsImage g where g.imageUrl in :urls")
-    List<String> findExistingUrls(@Param("urls") Collection<String> urls);
 }

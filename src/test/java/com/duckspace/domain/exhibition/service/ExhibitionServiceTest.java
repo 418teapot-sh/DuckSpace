@@ -55,9 +55,6 @@ class ExhibitionServiceTest {
     @Mock
     private com.duckspace.domain.exhibition.image.ImageCleanup imageCleanup;
 
-    @Mock
-    private com.duckspace.domain.exhibition.repository.GoodsImageRepository goodsImageRepository;
-
     @InjectMocks
     private ExhibitionService exhibitionService;
 
@@ -198,19 +195,7 @@ class ExhibitionServiceTest {
             verify(imageCleanup).deleteAfterCommit(List.of("https://cdn/a.png", "https://cdn/b.png"));
         }
 
-        @Test
-        void 보관함이_소유한_이미지는_정리_대상에서_뺀다() {
-            given(exhibitionRepository.findById(EXHIBITION_ID)).willReturn(Optional.of(exhibition));
-            given(exhibitionItemRepository.findImageUrlsByExhibitionId(EXHIBITION_ID))
-                    .willReturn(List.of("https://cdn/a.png", "https://cdn/lib.png"));
-            // lib.png 는 보관함 소유 — 장식장을 지워도 보관함에는 남아 있어야 합니다.
-            given(goodsImageRepository.findExistingUrls(List.of("https://cdn/a.png", "https://cdn/lib.png")))
-                    .willReturn(List.of("https://cdn/lib.png"));
 
-            exhibitionService.delete(EXHIBITION_ID, OWNER);
-
-            verify(imageCleanup).deleteAfterCommit(List.of("https://cdn/a.png"));
-        }
     }
 
     @Nested

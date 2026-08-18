@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 굿즈 사진 보관함. 전부 본인 것만 다루므로 <b>모든 API 가 토큰 필수</b>입니다.
@@ -41,7 +42,7 @@ public class GoodsImageController {
                     """)
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<GoodsImageResponse> upload(@AuthenticationPrincipal AuthUser authUser,
-                                                   @RequestPart("image") org.springframework.web.multipart.MultipartFile image) {
+                                                   @RequestPart("image") MultipartFile image) {
         return ApiResponse.success(goodsImageService.upload(authUser.getUserId(), image));
     }
 

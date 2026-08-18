@@ -12,7 +12,6 @@ import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.domain.exhibition.repository.ExhibitionLikeRepository;
 import com.duckspace.domain.exhibition.repository.ExhibitionRepository;
-import com.duckspace.domain.exhibition.repository.GoodsImageRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +41,6 @@ public class ExhibitionService {
     private final ExhibitionRepository exhibitionRepository;
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionLikeRepository exhibitionLikeRepository;
-    private final GoodsImageRepository goodsImageRepository;
     private final ImageCleanup imageCleanup;
 
     @Transactional
@@ -74,15 +72,14 @@ public class ExhibitionService {
         // 행을 지우기 전에 이미지 주소를 챙겨둡니다. 지운 뒤에는 알아낼 방법이 없어서
         // S3 객체가 영구히 남습니다.
         List<String> imageUrls = exhibitionItemRepository.findImageUrlsByExhibitionId(exhibitionId);
-        // 보관함이 소유했거나 다른 장식장이 쓰는 파일은 남깁니다. 지우면 그쪽 그림이 깨집니다.
-        // (행을 지우기 전에 조회해야 "다른 장식장" 판단이 정확합니다)
-        List<String> deletable = deletableUrls(imageUrls, exhibitionId);
 
         exhibitionItemRepository.deleteByExhibitionId(exhibitionId);
         exhibitionLikeRepository.deleteByExhibitionId(exhibitionId);
         exhibitionRepository.delete(exhibition);
 
-        imageCleanup.deleteAfterCommit(deletable);
+        // 공유 여부(보관함 소유·다른 장식장 사용)는 ImageCleanup 이 삭제 직전에 URL 별로
+        // 판단합니다. 커밋 후 시점이라 이 장식장의 행은 이미 사라져, 남은 참조만 잡힙니다.
+        imageCleanup.deleteAfterCommit(imageUrls);
     }
 
     /**
@@ -118,15 +115,6 @@ public class ExhibitionService {
                 escapeLike(keyword.trim()), ItemStatus.READY,
                 PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
         return toSummaries(ids, viewerId);
-    }
-
-    private List<String> deletableUrls(List<String> imageUrls, Long exhibitionId) {
-        if (imageUrls.isEmpty()) {
-            return imageUrls;
-        }
-        Set<String> keep = new HashSet<>(goodsImageRepository.findExistingUrls(imageUrls));
-        keep.addAll(exhibitionItemRepository.findUrlsUsedByOtherExhibitions(imageUrls, exhibitionId));
-        return imageUrls.stream().filter(url -> !keep.contains(url)).toList();
     }
 
     public Exhibition getExhibition(Long exhibitionId) {
