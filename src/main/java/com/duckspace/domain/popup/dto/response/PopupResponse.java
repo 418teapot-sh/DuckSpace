@@ -14,19 +14,13 @@ public record PopupResponse(
         LocalDate startDate,
         LocalDate endDate,
         PopupStatus status,
-        String aiSummary
+        String aiSummary,
+        boolean liked
 ) {
-    public static PopupResponse from(Popup popup) {
+    public static PopupResponse from(Popup popup, boolean liked) {
         return new PopupResponse(
-                popup.getId(),
-                popup.getTitle(),
-                popup.getImageUrl(),
-                popup.getDescription(),
-                popup.getLocation(),
-                popup.getStartDate(),
-                popup.getEndDate(),
-                popup.getStatus(),
-                popup.getAiSummary()
-        );
+                popup.getId(), popup.getTitle(), popup.getImageUrl(), popup.getDescription(),
+                popup.getLocation(), popup.getStartDate(), popup.getEndDate(),
+                popup.getStatus(), popup.getAiSummary(), liked);
     }
 }

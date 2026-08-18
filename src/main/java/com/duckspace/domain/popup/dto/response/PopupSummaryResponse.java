@@ -12,16 +12,18 @@ public record PopupSummaryResponse(
         String imageUrl,
         LocalDate startDate,
         LocalDate endDate,
-        PopupStatus status
+        PopupStatus status,
+        boolean liked
 ) {
-    public static PopupSummaryResponse from(Popup popup) {
+    public static PopupSummaryResponse from(Popup popup, boolean liked) {
         return new PopupSummaryResponse(
                 popup.getId(),
                 popup.getTitle(),
                 popup.getImageUrl(),
                 popup.getStartDate(),
                 popup.getEndDate(),
-                popup.getStatus()
+                popup.getStatus(),
+                liked
         );
     }
 }
