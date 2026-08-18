@@ -25,8 +25,8 @@ public class PopupController {
     private final PopupService popupService;
 
     @GetMapping("/api/popups")
-    public ApiResponse<List<PopupSummaryResponse>> getUpcomingPopups() {
-        return ApiResponse.success(popupService.getUpcomingPopups());
+    public ApiResponse<List<PopupSummaryResponse>> getPopups() {
+        return ApiResponse.success(popupService.getPopups());
     }
 
     @GetMapping("/api/popups/{popupId}")

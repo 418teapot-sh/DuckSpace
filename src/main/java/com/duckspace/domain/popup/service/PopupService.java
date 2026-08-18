@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.duckspace.global.support.ServiceZone;
+
 import java.time.LocalDate;
 import java.util.List;
 
@@ -24,9 +26,16 @@ public class PopupService {
     private final PopupRepository popupRepository;
     private final OpenAiSummaryClient openAiSummaryClient;
 
+    public List<PopupSummaryResponse> getPopups() {
+        return popupRepository.findAllByOrderByStartDateAsc()
+                .stream()
+                .map(PopupSummaryResponse::from)
+                .toList();
+    }
+
+    /** 홈 화면 "다가오는 팝업" 섹션용 — 종료된 팝업은 제외합니다. */
     public List<PopupSummaryResponse> getUpcomingPopups() {
-        LocalDate today = LocalDate.now();
-        return popupRepository.findAllByEndDateGreaterThanEqualOrderByStartDateAsc(today)
+        return popupRepository.findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now(ServiceZone.ZONE))
                 .stream()
                 .map(PopupSummaryResponse::from)
                 .toList();
@@ -48,7 +57,8 @@ public class PopupService {
         validatePeriod(request.startDate(), request.endDate());
 
         String aiSummary = openAiSummaryClient.summarizeSchedule(
-                request.title(), request.description(), request.startDate(), request.endDate());
+                request.title(), request.description(), request.location(),
+                request.startDate(), request.endDate());
 
         Popup popup = Popup.builder()
                 .title(request.title())
@@ -69,7 +79,8 @@ public class PopupService {
         Popup popup = getPopupOrThrow(popupId);
 
         String aiSummary = openAiSummaryClient.summarizeSchedule(
-                request.title(), request.description(), request.startDate(), request.endDate());
+                request.title(), request.description(), request.location(),
+                request.startDate(), request.endDate());
 
         popup.update(
                 request.title(),

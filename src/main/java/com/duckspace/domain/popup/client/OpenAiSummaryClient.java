@@ -19,12 +19,16 @@ public class OpenAiSummaryClient extends AbstractOpenAiSummaryClient {
         super(apiKey, model);
     }
 
-    public String summarizeSchedule(String title, String description, LocalDate startDate, LocalDate endDate) {
+    public String summarizeSchedule(String title, String description, String location,
+                                     LocalDate startDate, LocalDate endDate) {
+        String safeLocation = (location == null || location.isBlank()) ? "위치 정보 없음" : location;
+        String safeDescription = (description == null || description.isBlank()) ? "설명 없음" : description;
         String userContent = """
                   제목: %s
                   기간: %s ~ %s
+                  위치: %s
                   설명: %s
-                  """.formatted(title, startDate, endDate, description);
+                  """.formatted(title, startDate, endDate, safeLocation, safeDescription);
 
         return summarize(SYSTEM_PROMPT, userContent, "팝업");
     }
