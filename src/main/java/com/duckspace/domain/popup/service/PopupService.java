@@ -31,6 +31,14 @@ public class PopupService {
                 .toList();
     }
 
+    /** 홈 화면 "다가오는 팝업" 섹션용 — 종료된 팝업은 제외합니다. */
+    public List<PopupSummaryResponse> getUpcomingPopups() {
+        return popupRepository.findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now())
+                .stream()
+                .map(PopupSummaryResponse::from)
+                .toList();
+    }
+
     public PopupResponse getPopup(Long popupId) {
         return PopupResponse.from(getPopupOrThrow(popupId));
     }
