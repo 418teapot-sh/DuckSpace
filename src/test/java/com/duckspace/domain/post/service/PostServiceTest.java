@@ -1,5 +1,6 @@
 package com.duckspace.domain.post.service;
 
+import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.post.dto.request.CasualPostRequest;
 import com.duckspace.domain.post.dto.request.ExchangePostRequest;
 import com.duckspace.domain.post.dto.request.OfferedItemRequest;
@@ -11,11 +12,13 @@ import com.duckspace.domain.post.entity.ExchangeApplicationStatus;
 import com.duckspace.domain.post.entity.ExchangeDetail;
 import com.duckspace.domain.post.entity.ItemCondition;
 import com.duckspace.domain.post.entity.Post;
+import com.duckspace.domain.post.entity.PostImage;
 import com.duckspace.domain.post.entity.TradeItem;
 import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
 import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
+import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostImageRepository;
 import com.duckspace.domain.post.repository.PostLikeRepository;
@@ -67,6 +70,10 @@ class PostServiceTest {
     private UserRepository userRepository;
     @Mock
     private ExchangeApplicationWriter exchangeApplicationWriter;
+    @Mock
+    private PendingPostImageRepository pendingPostImageRepository;
+    @Mock
+    private ImageStorage imageStorage;
 
     private PostService postService;
 
@@ -74,7 +81,8 @@ class PostServiceTest {
     void setUp() {
         postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
                 exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
-                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter);
+                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter,
+                pendingPostImageRepository, imageStorage);
     }
 
     private Post casualPost(Long id, Long userId) {
@@ -107,6 +115,34 @@ class PostServiceTest {
             assertThat(postId).isEqualTo(1L);
             verify(postImageRepository, times(2)).save(any());
             verify(postHashtagRepository, times(1)).save(any());
+        }
+
+        @Test
+        void 이미지를_쓰면_대기중_표시를_지운다() {
+            // PostImageService.upload가 남겨둔 "아직 안 쓰였다" 표시를, 실제로 글에 담기면 지워야
+            // PendingPostImageCleaner가 방금 쓴 이미지까지 고아로 오인해 지우지 않습니다.
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+
+            postService.createCasual(10L, new CasualPostRequest("본문", List.of("a.png", "b.png"), null));
+
+            verify(pendingPostImageRepository).deleteByImageUrlIn(List.of("a.png", "b.png"));
+        }
+
+        @Test
+        void 이미지가_없으면_대기중_표시를_건드리지_않는다() {
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+
+            postService.createCasual(10L, new CasualPostRequest("본문", null, null));
+
+            verify(pendingPostImageRepository, never()).deleteByImageUrlIn(any());
         }
 
         @Test
@@ -174,6 +210,47 @@ class PostServiceTest {
 
             assertThat(postId).isEqualTo(1L);
             verify(tradeItemRepository, times(2)).save(any());
+        }
+
+        @Test
+        void offeredItem과_wantedItem의_이미지_대기중_표시를_지운다() {
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+            given(exchangeDetailRepository.save(any(ExchangeDetail.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+            ExchangePostRequest request = new ExchangePostRequest(
+                    "제목", "본문",
+                    new OfferedItemRequest("offer.png", "인형", "브랜드A", ItemCondition.UNOPENED),
+                    new WantedItemRequest("want.png", "키링", "브랜드B"),
+                    null, null, null, null);
+
+            postService.createExchange(10L, request);
+
+            verify(pendingPostImageRepository).deleteByImageUrlIn(List.of("offer.png", "want.png"));
+        }
+
+        @Test
+        void wantedItem에_이미지가_없어도_offeredItem_이미지는_대기중_표시를_지운다() {
+            // wantedItem.imageUrl은 선택이라 null이 흔합니다. null까지 리포지토리로 넘기면 안 됩니다.
+            given(postRepository.save(any(Post.class))).willAnswer(invocation -> {
+                Post post = invocation.getArgument(0);
+                ReflectionTestUtils.setField(post, "id", 1L);
+                return post;
+            });
+            given(exchangeDetailRepository.save(any(ExchangeDetail.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+            ExchangePostRequest request = new ExchangePostRequest(
+                    "제목", "본문",
+                    new OfferedItemRequest("offer.png", "인형", "브랜드A", ItemCondition.UNOPENED),
+                    new WantedItemRequest(null, "키링", null),
+                    null, null, null, null);
+
+            postService.createExchange(10L, request);
+
+            verify(pendingPostImageRepository).deleteByImageUrlIn(List.of("offer.png"));
         }
     }
 
@@ -304,6 +381,48 @@ class PostServiceTest {
             verify(postImageRepository).deleteByPost_Id(1L);
             verify(postImageRepository).save(any());
             verify(postHashtagRepository, never()).deleteByPost_Id(any());
+        }
+
+        @Test
+        void 목록에서_빠진_이미지는_실제_파일도_지운다() {
+            // 안 지우면 PostImage 행도 없고 이미 claimImages로 PendingPostImage에서도 빠진
+            // 완전한 영구 고아가 됩니다 — 리뷰(Yun-pix)가 지적한 지점.
+            Post post = casualPost(1L, 10L);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(postImageRepository.findByPost_IdOrderBySortOrderAsc(1L)).willReturn(List.of(
+                    new PostImage(post, "keep.png", 0),
+                    new PostImage(post, "remove.png", 1)));
+
+            postService.updateCasual(1L, 10L, new CasualPostRequest("본문", List.of("keep.png"), null));
+
+            verify(imageStorage).deleteByUrl("remove.png");
+            verify(imageStorage, never()).deleteByUrl("keep.png");
+        }
+
+        @Test
+        void 이미지를_전부_빼면_전부_지운다() {
+            Post post = casualPost(1L, 10L);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(postImageRepository.findByPost_IdOrderBySortOrderAsc(1L)).willReturn(List.of(
+                    new PostImage(post, "a.png", 0),
+                    new PostImage(post, "b.png", 1)));
+
+            postService.updateCasual(1L, 10L, new CasualPostRequest("본문", List.of(), null));
+
+            verify(imageStorage).deleteByUrl("a.png");
+            verify(imageStorage).deleteByUrl("b.png");
+        }
+
+        @Test
+        void 같은_이미지를_그대로_다시_보내면_지우지_않는다() {
+            Post post = casualPost(1L, 10L);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(postImageRepository.findByPost_IdOrderBySortOrderAsc(1L)).willReturn(List.of(
+                    new PostImage(post, "keep.png", 0)));
+
+            postService.updateCasual(1L, 10L, new CasualPostRequest("본문", List.of("keep.png"), null));
+
+            verify(imageStorage, never()).deleteByUrl(any());
         }
 
         @Test

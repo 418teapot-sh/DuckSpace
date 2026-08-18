@@ -1,5 +1,6 @@
 package com.duckspace.domain.post.service;
 
+import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.post.dto.request.CasualPostRequest;
 import com.duckspace.domain.post.dto.request.ExchangePostRequest;
 import com.duckspace.domain.post.dto.request.OfferedItemRequest;
@@ -18,6 +19,7 @@ import com.duckspace.domain.post.exception.PostErrorCode;
 import com.duckspace.domain.post.repository.CommentRepository;
 import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
+import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostIdCount;
 import com.duckspace.domain.post.repository.PostImageRepository;
@@ -33,7 +35,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -57,6 +62,8 @@ public class PostService {
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
     private final ExchangeApplicationWriter exchangeApplicationWriter;
+    private final PendingPostImageRepository pendingPostImageRepository;
+    private final ImageStorage imageStorage;
 
     @Transactional
     public Long createCasual(Long userId, CasualPostRequest request) {
@@ -105,6 +112,7 @@ public class PostService {
         WantedItemRequest wanted = request.wantedItem();
         tradeItemRepository.save(TradeItem.wanted(detail, wanted.imageUrl(), wanted.itemName(), wanted.brand()));
 
+        claimImages(Arrays.asList(offered.imageUrl(), wanted.imageUrl()));
         return post.getId();
     }
 
@@ -197,8 +205,16 @@ public class PostService {
         }
 
         if (request.imageUrls() != null) {
+            List<String> oldUrls = postImageRepository.findByPost_IdOrderBySortOrderAsc(postId).stream()
+                    .map(PostImage::getImageUrl)
+                    .toList();
             postImageRepository.deleteByPost_Id(postId);
             saveImages(post, request.imageUrls());
+
+            List<String> removed = oldUrls.stream()
+                    .filter(url -> !request.imageUrls().contains(url))
+                    .toList();
+            deleteImagesAfterCommit(removed);
         }
         if (request.hashtags() != null) {
             postHashtagRepository.deleteByPost_Id(postId);
@@ -275,6 +291,42 @@ public class PostService {
         for (String imageUrl : imageUrls) {
             postImageRepository.save(new PostImage(post, imageUrl, order++));
         }
+        claimImages(imageUrls);
+    }
+
+    /**
+     * PostImageService.upload가 남겨둔 "아직 안 쓰였다" 표시를 지웁니다. 실제 글 작성에 쓰인
+     * URL만 넘기세요 — null/blank는 걸러서 무시합니다(교환 글은 imageUrl이 선택이라 흔합니다).
+     */
+    private void claimImages(List<String> imageUrls) {
+        List<String> used = imageUrls.stream().filter(url -> url != null && !url.isBlank()).toList();
+        if (!used.isEmpty()) {
+            pendingPostImageRepository.deleteByImageUrlIn(used);
+        }
+    }
+
+    /**
+     * 잡담 글 수정으로 목록에서 빠진 이미지의 실제 파일을 지웁니다. 이미 claimImages로
+     * PendingPostImage 표시가 지워진 뒤라 그쪽 정리 대상에도 안 걸리므로, 여기서 안 지우면
+     * 완전한 영구 고아가 됩니다(PostImage 행도 지워졌고 PendingPostImage에도 없음).
+     *
+     * <p>커밋 이후에 지우는 이유는 exhibition의 ImageCleanup과 같습니다 — 트랜잭션이 롤백되면
+     * PostImage 행은 살아있는데 실제 파일만 사라지는 걸 막기 위해서입니다.
+     */
+    private void deleteImagesAfterCommit(List<String> imageUrls) {
+        if (imageUrls.isEmpty()) {
+            return;
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            imageUrls.forEach(imageStorage::deleteByUrl);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                imageUrls.forEach(imageStorage::deleteByUrl);
+            }
+        });
     }
 
     private void saveHashtags(Post post, List<String> hashtags) {

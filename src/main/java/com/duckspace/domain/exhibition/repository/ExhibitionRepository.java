@@ -29,7 +29,7 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     List<Long> findPopularIds(Pageable pageable);
 
     /**
-     * 내 장식장 id 목록. 최근에 만든 것부터입니다.
+     * 내 장식장 id 목록. 만든 순서대로(오래된 것부터)입니다.
      *
      * <p>이게 없으면 <b>사용자가 자기 장식장을 다시 찾을 방법이 없습니다.</b> 조회 경로가
      * 인기순·검색·id 직접 지정뿐이라, 좋아요를 못 받은 장식장은 만들고 나면 사라집니다.
@@ -37,7 +37,7 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
      * <p>id 만 뽑는 이유는 {@link #findPopularIds} 와 같습니다 — 뒤이어 대표이미지·좋아요를
      * 한 번에 채우는 공통 경로를 태우기 위해서입니다.
      */
-    @Query("select e.id from Exhibition e where e.userId = :userId order by e.id desc")
+    @Query("select e.id from Exhibition e where e.userId = :userId order by e.id asc")
     List<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);
 
     /**

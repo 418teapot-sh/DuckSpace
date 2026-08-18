@@ -6,6 +6,7 @@ import com.duckspace.domain.auth.dto.TokenResponse;
 import com.duckspace.domain.auth.entity.RefreshToken;
 import com.duckspace.domain.auth.exception.AuthErrorCode;
 import com.duckspace.domain.auth.repository.RefreshTokenRepository;
+import com.duckspace.domain.exhibition.service.ExhibitionService;
 import com.duckspace.domain.user.entity.AuthProvider;
 import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
@@ -30,6 +31,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final LoginAttemptLimiter loginAttemptLimiter;
     private final RefreshTokenWriter refreshTokenWriter;
+    private final ExhibitionService exhibitionService;
 
     @Transactional
     public TokenResponse signup(SignupRequest request) {
@@ -49,6 +51,8 @@ public class AuthService {
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
+
+        exhibitionService.createDefault(user.getId());
 
         return issueTokens(user);
     }

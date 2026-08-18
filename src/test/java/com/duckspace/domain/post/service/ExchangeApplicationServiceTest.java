@@ -8,9 +8,11 @@ import com.duckspace.domain.post.entity.ExchangeDetail;
 import com.duckspace.domain.post.entity.ItemCondition;
 import com.duckspace.domain.post.entity.Post;
 import com.duckspace.domain.post.exception.PostErrorCode;
+import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.post.repository.CommentRepository;
 import com.duckspace.domain.post.repository.ExchangeApplicationRepository;
 import com.duckspace.domain.post.repository.ExchangeDetailRepository;
+import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostImageRepository;
 import com.duckspace.domain.post.repository.PostLikeRepository;
@@ -67,6 +69,10 @@ class ExchangeApplicationServiceTest {
     private CommentRepository commentRepository;
     @Mock
     private ExchangeApplicationWriter exchangeApplicationWriter;
+    @Mock
+    private PendingPostImageRepository pendingPostImageRepository;
+    @Mock
+    private ImageStorage imageStorage;
 
     private ExchangeApplicationService exchangeApplicationService;
 
@@ -75,7 +81,8 @@ class ExchangeApplicationServiceTest {
     void setUp() {
         PostService postService = new PostService(postRepository, postImageRepository, postHashtagRepository,
                 exchangeDetailRepository, exchangeApplicationRepository, tradeItemRepository,
-                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter);
+                postLikeRepository, commentRepository, userRepository, exchangeApplicationWriter,
+                pendingPostImageRepository, imageStorage);
         exchangeApplicationService = new ExchangeApplicationService(exchangeApplicationRepository,
                 exchangeDetailRepository, postRepository, userRepository, postService, exchangeApplicationWriter);
     }

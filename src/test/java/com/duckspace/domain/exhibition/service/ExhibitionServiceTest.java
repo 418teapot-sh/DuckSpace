@@ -97,6 +97,21 @@ class ExhibitionServiceTest {
     }
 
     @Nested
+    @DisplayName("createDefault 메서드는")
+    class CreateDefault {
+
+        @Test
+        void 기본_이름과_기본_테마로_장식장을_만든다() {
+            exhibitionService.createDefault(OWNER);
+
+            ArgumentCaptor<Exhibition> captor = ArgumentCaptor.forClass(Exhibition.class);
+            verify(exhibitionRepository).save(captor.capture());
+            assertThat(captor.getValue().getUserId()).isEqualTo(OWNER);
+            assertThat(captor.getValue().getThemeCode()).isEqualTo(Exhibition.DEFAULT_THEME_CODE);
+        }
+    }
+
+    @Nested
     @DisplayName("getDetail 메서드는")
     class GetDetail {
 

@@ -38,6 +38,9 @@ public class ExhibitionService {
     /** 내 장식장은 한 화면에 다 보이는 편이 자연스러워서 기본값을 크게 잡습니다. */
     private static final int MINE_DEFAULT_LIMIT = 20;
 
+    /** 회원가입 시 자동으로 만들어주는 기본 장식장의 이름. */
+    private static final String DEFAULT_NAME = "내 장식장";
+
     private final ExhibitionRepository exhibitionRepository;
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionLikeRepository exhibitionLikeRepository;
@@ -48,6 +51,12 @@ public class ExhibitionService {
         Exhibition saved = exhibitionRepository.save(
                 new Exhibition(userId, request.name(), request.themeCode()));
         return ExhibitionDetailResponse.of(saved, userId, 0, false, List.of());
+    }
+
+    /** 회원가입 시 기본으로 만들어주는 장식장. 이름은 나중에 사용자가 바꿀 수 있습니다. */
+    @Transactional
+    public void createDefault(Long userId) {
+        exhibitionRepository.save(new Exhibition(userId, DEFAULT_NAME, Exhibition.DEFAULT_THEME_CODE));
     }
 
     public ExhibitionDetailResponse getDetail(Long exhibitionId, Long viewerId) {
@@ -83,7 +92,7 @@ public class ExhibitionService {
     }
 
     /**
-     * 내 장식장 목록. 마이페이지에서 씁니다. 최근에 만든 것부터입니다.
+     * 내 장식장 목록. 마이페이지에서 씁니다. 만든 순서대로(오래된 것부터)입니다.
      *
      * <p>{@code likedByMe} 는 <b>내가 내 장식장에 좋아요를 눌렀는지</b>를 뜻합니다.
      * 목록 카드가 인기·검색과 같은 응답을 쓰기 때문에 그대로 채워 보냅니다.
