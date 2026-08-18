@@ -69,6 +69,13 @@ public class User extends BaseTimeEntity {
         return this;
     }
 
+    /** 사진 업로드로 프로필 이미지만 교체합니다. 닉네임은 건드리지 않습니다. */
+    public String replaceProfileImage(String profileImageUrl) {
+        String previous = this.profileImageUrl;
+        this.profileImageUrl = profileImageUrl;
+        return previous;
+    }
+
     public boolean isLocal() {
         return authProvider == AuthProvider.LOCAL && password != null;
     }
