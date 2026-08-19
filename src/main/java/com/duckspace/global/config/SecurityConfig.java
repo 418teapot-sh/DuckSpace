@@ -62,6 +62,8 @@ public class SecurityConfig {
             "/api/exhibitions/{exhibitionId:[0-9]+}",
             // 프로필 화면에서 다른 유저의 대표 장식장으로 이동할 때 씁니다(#65).
             "/api/exhibitions/users/{userId:[0-9]+}/primary",
+            // 프로필 화면의 장식장 탭 — 다른 유저의 장식장 전체 목록(#87).
+            "/api/exhibitions/users/{userId:[0-9]+}",
             "/api/search/exhibitions",
             // 조회만 있는 화면이지만 메서드 무관 목록에 두면, 나중에 이 아래 변경 API 가
             // 생겼을 때 조용히 무인증으로 열립니다(팝업이 #55 에서 그 직전까지 갔습니다).
