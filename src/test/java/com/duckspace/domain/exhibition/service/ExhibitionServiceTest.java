@@ -276,7 +276,7 @@ class ExhibitionServiceTest {
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(STRANGER, List.of(3L))).willReturn(List.of(3L));
 
-            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, STRANGER, null);
+            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, STRANGER, null, null);
 
             assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
             assertThat(result.get(0).likedByMe())
@@ -297,7 +297,7 @@ class ExhibitionServiceTest {
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
 
-            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, null, null);
+            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, null, null, null);
 
             assertThat(result.get(0).likedByMe()).isFalse();
         }
@@ -308,7 +308,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of());
 
-            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, STRANGER, null);
+            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, STRANGER, null, null);
 
             assertThat(result).isEmpty();
         }
@@ -319,11 +319,25 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of());
 
-            exhibitionService.getByUser(OWNER, STRANGER, null);
+            exhibitionService.getByUser(OWNER, STRANGER, null, null);
 
             ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
             verify(exhibitionRepository).findIdsByUserId(eq(OWNER), captor.capture());
             assertThat(captor.getValue().getPageSize()).isEqualTo(20);
+        }
+
+        @Test
+        @DisplayName("cursor 를 주면 findIdsByUserId 대신 findIdsByUserIdAfter 로 더보기를 가져온다")
+        void cursor가_있으면_더보기_쿼리를_쓴다() {
+            // getMine 이 #85 에서 겪은 "상한(50)에 걸린 뒤로는 자기 장식장인데도 닿을 방법이
+            // 없다" 버그가 getByUser 에도 그대로 있었습니다(PR #89 리뷰) — 재발 방지용 테스트입니다.
+            given(exhibitionRepository.findIdsByUserIdAfter(eq(OWNER), eq(3L), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            exhibitionService.getByUser(OWNER, STRANGER, 3L, null);
+
+            verify(exhibitionRepository).findIdsByUserIdAfter(eq(OWNER), eq(3L), any(Pageable.class));
+            verify(exhibitionRepository, never()).findIdsByUserId(eq(OWNER), any(Pageable.class));
         }
     }
 

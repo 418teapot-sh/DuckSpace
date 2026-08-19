@@ -109,14 +109,18 @@ public class ExhibitionController {
             description = """
                     다른 유저 프로필의 장식장 탭에서 씁니다. 만든 순서대로(오래된 것부터) 돌려줍니다.
                     limit 기본 20, 최대 50. 정렬·페이지네이션 정책은 /me 와 같습니다.
+                    장식장이 limit 보다 많으면 **마지막 항목의 exhibitionId 를 cursor 로 넣어** 다음 장을
+                    받으세요. cursor 를 안 보내면 처음부터 돌려줍니다.
                     장식장이 하나도 없으면 빈 배열입니다.
                     **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
                     """)
     @GetMapping("/users/{userId:[0-9]+}")
     public ApiResponse<List<ExhibitionSummaryResponse>> byUser(@AuthenticationPrincipal AuthUser authUser,
                                                                  @PathVariable Long userId,
+                                                                 @RequestParam(required = false) Long cursor,
                                                                  @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.getByUser(userId, AuthUser.idOrNull(authUser), limit));
+        return ApiResponse.success(
+                exhibitionService.getByUser(userId, AuthUser.idOrNull(authUser), cursor, limit));
     }
 
     @Operation(summary = "장식장 상세",

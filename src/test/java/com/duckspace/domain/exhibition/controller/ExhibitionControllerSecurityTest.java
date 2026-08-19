@@ -102,7 +102,7 @@ class ExhibitionControllerSecurityTest {
     @Test
     @DisplayName("비로그인도 유저의 장식장 목록을 볼 수 있다")
     void 유저_장식장_목록은_공개() throws Exception {
-        given(exhibitionService.getByUser(eq(1L), isNull(), any())).willReturn(List.of());
+        given(exhibitionService.getByUser(eq(1L), isNull(), any(), any())).willReturn(List.of());
 
         mockMvc.perform(get("/api/exhibitions/users/1"))
                 .andExpect(status().isOk());

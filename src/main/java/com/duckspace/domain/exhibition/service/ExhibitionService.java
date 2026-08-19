@@ -107,7 +107,7 @@ public class ExhibitionService {
      * 목록 카드가 인기·검색과 같은 응답을 쓰기 때문에 그대로 채워 보냅니다.
      */
     public List<ExhibitionSummaryResponse> getMine(Long userId, Long cursor, Integer limit) {
-        Pageable pageable = PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT));
+        Pageable pageable = userExhibitionsPageable(limit);
 
         // 커서가 없으면 예전과 완전히 같습니다. 응답 모양도 그대로라 프론트는 안 고쳐도 됩니다 —
         // 다음 장을 원할 때만 마지막 항목의 exhibitionId 를 cursor 로 넣으면 됩니다.
@@ -121,15 +121,26 @@ public class ExhibitionService {
     /**
      * 특정 유저의 장식장 목록. 다른 유저 프로필의 장식장 탭에서 씁니다.
      *
-     * <p>정렬·기본값·상한은 {@link #getMine} 과 같습니다(만든 순서대로, 오래된 것부터).
+     * <p>정렬·기본값·상한·커서 방식은 {@link #getMine} 과 같습니다(만든 순서대로, 오래된
+     * 것부터 — 커서가 없으면 상한(50)을 넘는 뒤쪽은 닿을 방법이 없어서, {@code getMine} 과
+     * 마찬가지로 마지막 항목의 id를 커서로 받아 더보기를 지원합니다).
      * {@code getMine} 과 달리 조회 대상({@code userId})과 보는 사람({@code viewerId})이
      * 분리돼 있습니다 — 남의 장식장 목록을 보는 것이라 {@code likedByMe} 는 실제 보는 사람
      * 기준입니다. 장식장이 하나도 없으면 빈 목록입니다({@link #getPrimary} 와 달리 404 아님).
      */
-    public List<ExhibitionSummaryResponse> getByUser(Long userId, Long viewerId, Integer limit) {
-        List<Long> ids = exhibitionRepository.findIdsByUserId(
-                userId, PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT)));
+    public List<ExhibitionSummaryResponse> getByUser(Long userId, Long viewerId, Long cursor, Integer limit) {
+        Pageable pageable = userExhibitionsPageable(limit);
+
+        List<Long> ids = (cursor == null)
+                ? exhibitionRepository.findIdsByUserId(userId, pageable)
+                : exhibitionRepository.findIdsByUserIdAfter(userId, cursor, pageable);
+
         return toSummaries(ids, viewerId);
+    }
+
+    /** {@link #getMine} · {@link #getByUser} 가 같이 쓰는 페이지 크기 구성. */
+    private Pageable userExhibitionsPageable(Integer limit) {
+        return PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT));
     }
 
     /**
