@@ -52,8 +52,10 @@ public class ChatController {
                     - after: 그 messageId 이후만 (폴링 — 마지막으로 받은 id 를 넣어 3초 간격 호출)
                     - before: 그 messageId 이전만 (위로 스크롤 — 화면에 있는 가장 오래된 id 를 넣으세요)
                     after 와 before 를 같이 주면 400 입니다.
-                    읽음 처리는 최초 진입·폴링에서만 됩니다. before 조회로 응답이 size 보다 짧게 오면
-                    더 이상 지난 대화가 없다는 뜻입니다.
+                    읽음 처리는 최초 진입·폴링에서만 됩니다.
+                    **지난 대화의 끝은 응답이 비었을 때로 판단하세요.** size 는 서버가 최대 100 으로
+                    깎기 때문에, 그보다 큰 값을 보내고 "응답이 size 보다 짧으면 끝" 으로 보면
+                    아직 남은 대화가 있는데도 끝난 것으로 오판하게 됩니다.
                     """)
     @GetMapping("/rooms/{roomId}/messages")
     public ApiResponse<List<ChatMessageResponse>> getMessages(@AuthenticationPrincipal AuthUser authUser,

@@ -106,9 +106,15 @@ public class ExhibitionService {
      * <p>{@code likedByMe} 는 <b>내가 내 장식장에 좋아요를 눌렀는지</b>를 뜻합니다.
      * 목록 카드가 인기·검색과 같은 응답을 쓰기 때문에 그대로 채워 보냅니다.
      */
-    public List<ExhibitionSummaryResponse> getMine(Long userId, Integer limit) {
-        List<Long> ids = exhibitionRepository.findIdsByUserId(
-                userId, PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT)));
+    public List<ExhibitionSummaryResponse> getMine(Long userId, Long cursor, Integer limit) {
+        Pageable pageable = PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT));
+
+        // 커서가 없으면 예전과 완전히 같습니다. 응답 모양도 그대로라 프론트는 안 고쳐도 됩니다 —
+        // 다음 장을 원할 때만 마지막 항목의 exhibitionId 를 cursor 로 넣으면 됩니다.
+        List<Long> ids = (cursor == null)
+                ? exhibitionRepository.findIdsByUserId(userId, pageable)
+                : exhibitionRepository.findIdsByUserIdAfter(userId, cursor, pageable);
+
         return toSummaries(ids, userId);
     }
 

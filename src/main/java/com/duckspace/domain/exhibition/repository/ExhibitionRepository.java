@@ -41,6 +41,18 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     List<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);
 
     /**
+     * 내 장식장 목록 더보기. 커서(마지막으로 받은 장식장 id)보다 뒤엣것만 가져옵니다.
+     *
+     * <p>이게 없으면 상한(50)에 걸린 뒤로는 <b>자기 장식장인데도 닿을 방법이 없습니다</b> —
+     * 위 메서드 문서가 "이게 없으면 자기 장식장을 다시 찾을 방법이 없다" 고 적어둔 그 경로인데
+     * 정작 51번째부터는 그 경로로도 안 나왔습니다.
+     */
+    @Query("select e.id from Exhibition e where e.userId = :userId and e.id > :cursor order by e.id asc")
+    List<Long> findIdsByUserIdAfter(@Param("userId") Long userId,
+                                     @Param("cursor") Long cursor,
+                                     Pageable pageable);
+
+    /**
      * 검색 탭 기본 화면의 장식장 피드용 — 필터 없이 등록된 순서(최신순)로 전체 장식장 id를 가져옵니다.
      * {@link #findPopularIds}와 달리 좋아요 수로 정렬하지 않습니다.
      *

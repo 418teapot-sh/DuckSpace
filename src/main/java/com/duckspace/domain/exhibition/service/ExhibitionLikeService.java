@@ -4,7 +4,7 @@ import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.repository.ExhibitionLikeRepository;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +26,14 @@ public class ExhibitionLikeService {
         exhibitionService.getExhibition(exhibitionId);
         try {
             exhibitionLikeWriter.insert(exhibitionId, userId);
-        } catch (DataIntegrityViolationException e) {
+        } catch (DataAccessException e) {
+            // DataIntegrityViolationException 만 잡으면 부족합니다 — 동시에 두 번 눌렀을 때
+            // 항상 duplicate-key 로 오는 게 아니라, 뒤에 온 INSERT 가 앞 트랜잭션의 인덱스
+            // 락을 기다리다 락 타임아웃이나 데드락 victim 이 되기도 합니다. 그건
+            // CannotAcquireLockException 이라 여기 안 걸리고 그대로 500 이 나갔습니다.
+            // (PR #58 이 같은 패턴에서 실제로 이걸 맞고 재시도를 넣었습니다)
+            //
+            // 아래 재확인이 원인과 무관하게 "결과가 맞는지" 만 보므로 범위를 넓혀도 안전합니다.
             // 여기로 오는 경우가 두 가지인데 결과가 정반대라 구분해야 합니다.
             //   1) 유니크 제약 — 동시에 두 번 눌렸습니다. 이미 눌린 상태이므로 성공.
             //   2) FK 제약 — 위 존재 확인과 INSERT 사이에 장식장이 삭제됐습니다. 좋아요는

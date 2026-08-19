@@ -234,7 +234,7 @@ class ExhibitionServiceTest {
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
 
-            List<ExhibitionSummaryResponse> result = exhibitionService.getMine(OWNER, null);
+            List<ExhibitionSummaryResponse> result = exhibitionService.getMine(OWNER, null, null);
 
             assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
             assertThat(result.get(0).thumbnailUrl()).isEqualTo("thumb.png");
@@ -249,7 +249,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of());
 
-            exhibitionService.getMine(OWNER, null);
+            exhibitionService.getMine(OWNER, null, null);
 
             ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
             verify(exhibitionRepository).findIdsByUserId(eq(OWNER), captor.capture());
