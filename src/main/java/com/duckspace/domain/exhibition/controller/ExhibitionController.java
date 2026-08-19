@@ -8,6 +8,7 @@ import com.duckspace.domain.exhibition.dto.request.UploadItemRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemResponse;
+import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryResponse;
 import com.duckspace.domain.exhibition.service.ExhibitionItemService;
 import com.duckspace.domain.exhibition.service.ExhibitionLikeService;
@@ -53,13 +54,16 @@ public class ExhibitionController {
 
     @Operation(summary = "장식장 피드",
             description = """
-                    검색 탭 기본 화면용 — 필터 없이 최신 등록순으로 전체 장식장을 돌려줍니다. limit 기본 10, 최대 50.
+                    검색 탭 기본 화면용 — 필터 없이 최신 등록순 커서 페이징입니다.
+                    cursor 를 안 보내면 첫 페이지, size 기본 10·최대 50입니다.
+                    응답의 nextCursor 를 다음 요청의 cursor 로 넣으세요.
                     **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
                     """)
     @GetMapping
-    public ApiResponse<List<ExhibitionSummaryResponse>> recent(@AuthenticationPrincipal AuthUser authUser,
-                                                                 @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.getRecent(limit, AuthUser.idOrNull(authUser)));
+    public ApiResponse<ExhibitionSummaryPageResponse> recent(@AuthenticationPrincipal AuthUser authUser,
+                                                               @RequestParam(required = false) Long cursor,
+                                                               @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(exhibitionService.getRecent(cursor, size, AuthUser.idOrNull(authUser)));
     }
 
     @Operation(summary = "인기 전시장",

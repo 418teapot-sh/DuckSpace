@@ -1,6 +1,7 @@
 package com.duckspace.domain.exhibition.controller;
 
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
+import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryResponse;
 import com.duckspace.domain.exhibition.service.ExhibitionItemService;
 import com.duckspace.domain.exhibition.service.ExhibitionLikeService;
@@ -82,7 +83,8 @@ class ExhibitionControllerSecurityTest {
     @Test
     @DisplayName("비로그인도 검색 탭 장식장 피드를 볼 수 있다")
     void 장식장_피드는_공개() throws Exception {
-        given(exhibitionService.getRecent(any(), isNull())).willReturn(List.of());
+        given(exhibitionService.getRecent(any(), any(), isNull()))
+                .willReturn(new ExhibitionSummaryPageResponse(List.of(), null, false));
 
         mockMvc.perform(get("/api/exhibitions"))
                 .andExpect(status().isOk());

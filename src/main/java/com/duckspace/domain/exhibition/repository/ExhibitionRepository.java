@@ -55,9 +55,14 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     /**
      * 검색 탭 기본 화면의 장식장 피드용 — 필터 없이 등록된 순서(최신순)로 전체 장식장 id를 가져옵니다.
      * {@link #findPopularIds}와 달리 좋아요 수로 정렬하지 않습니다.
+     *
+     * <p>{@code cursor} 가 {@code null} 이면 첫 페이지, 아니면 그보다 오래된 것만 가져옵니다.
+     * 서비스단에서 {@code cursor} 가 유효한 id(1 이상)일 때만 넘겨줘야 합니다 — 0 이하를
+     * 그대로 넘기면 id 가 1부터 시작하는 이 테이블 특성상 {@code e.id < 0} 이 되어 데이터가
+     * 있어도 항상 빈 목록이 나옵니다(PR #86 리뷰).
      */
-    @Query("select e.id from Exhibition e order by e.id desc")
-    List<Long> findRecentIds(Pageable pageable);
+    @Query("select e.id from Exhibition e where (:cursor is null or e.id < :cursor) order by e.id desc")
+    List<Long> findRecentIds(@Param("cursor") Long cursor, Pageable pageable);
 
     /**
      * 굿즈 이름으로 장식장을 찾습니다. 매칭된 굿즈가 놓인 장식장을 결과로 돌려줍니다.
