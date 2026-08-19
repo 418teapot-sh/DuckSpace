@@ -72,7 +72,7 @@ public class PostImageService {
         try {
             return image.getBytes();
         } catch (IOException e) {
-            throw new BusinessException(PostErrorCode.IMAGE_UPLOAD_FAILED);
+            throw new BusinessException(PostErrorCode.IMAGE_UPLOAD_FAILED, e);
         }
     }
 }

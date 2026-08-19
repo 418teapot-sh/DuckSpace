@@ -32,19 +32,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = resolveToken(request);
 
-        if (token != null && jwtTokenProvider.validate(token)) {
-            if (jwtTokenProvider.isAccessToken(token)) {
-                AuthUser authUser = new AuthUser(jwtTokenProvider.getUserId(token), jwtTokenProvider.getRole(token));
+        // 여기서 예외가 나가면 GlobalExceptionHandler 가 못 잡습니다 — @RestControllerAdvice 는
+        // DispatcherServlet 안에서만 동작하고 필터는 그 바깥이라, 컨테이너 기본 에러 페이지가
+        // 나갑니다. 프론트는 { success, data, error, traceId } 를 기대하는데 파싱 불가능한
+        // HTML 을 받고, 401 로 복구 가능한 상황이 500 이 됩니다.
+        //
+        // validate() 는 서명과 만료만 증명합니다. 그 뒤 claim 을 해석하는 getUserId(Long.valueOf)
+        // 와 getRole 은 값이 예상 밖이면 unchecked 예외를 던집니다.
+        try {
+            if (token != null && jwtTokenProvider.validate(token)) {
+                if (jwtTokenProvider.isAccessToken(token)) {
+                    AuthUser authUser = new AuthUser(jwtTokenProvider.getUserId(token), jwtTokenProvider.getRole(token));
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(authUser, null, authUser.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(authUser, null, authUser.getAuthorities());
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-            } else {
-                log.warn("액세스 토큰이 아닌 토큰으로 인증을 시도했습니다: {} {}",
-                        request.getMethod(), request.getRequestURI());
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    log.warn("액세스 토큰이 아닌 토큰으로 인증을 시도했습니다: {} {}",
+                            request.getMethod(), request.getRequestURI());
+                }
             }
+        } catch (RuntimeException e) {
+            // 인증을 걸지 않고 통과시킵니다. 뒤의 JwtAuthenticationEntryPoint 가 정상적인
+            // 401 ApiResponse 를 내보냅니다.
+            SecurityContextHolder.clearContext();
+            log.warn("토큰을 해석하지 못해 인증 없이 진행합니다: {} {} ({})",
+                    request.getMethod(), request.getRequestURI(), e.toString());
         }
 
         filterChain.doFilter(request, response);
