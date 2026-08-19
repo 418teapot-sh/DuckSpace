@@ -215,7 +215,7 @@ public class PostService {
             List<String> removed = oldUrls.stream()
                     .filter(url -> !request.imageUrls().contains(url))
                     .toList();
-            deleteImagesAfterCommit(removed);
+            deleteImagesAfterCommit(ownedByAuthor(userId, removed));
         }
         if (request.hashtags() != null) {
             postHashtagRepository.deleteByPost_Id(postId);
@@ -314,6 +314,29 @@ public class PostService {
      * <p>커밋 이후에 지우는 이유는 exhibition의 ImageCleanup과 같습니다 — 트랜잭션이 롤백되면
      * PostImage 행은 살아있는데 실제 파일만 사라지는 걸 막기 위해서입니다.
      */
+    /**
+     * 삭제 대상을 <b>이 사용자가 올린 게시글 이미지</b>로 좁힙니다.
+     *
+     * <p>{@code imageUrls}는 클라이언트가 준 값이 그대로 저장된 것이라, 남의 이미지 주소가
+     * 섞여 있을 수 있습니다({@code saveImages}가 소유를 확인하지 않습니다). 그대로 지우면
+     * <b>남의 프로필 사진·게시글 사진·굿즈 이미지를 저장소에서 지울 수 있습니다</b> —
+     * 남의 URL로 글을 만들고 {@code imageUrls: []}로 PATCH하면 그 파일이 사라집니다.
+     *
+     * <p>{@link ImageStorage#keyOf}는 "우리 저장소 주소인가"까지만 알려주므로, 키에 소유자가
+     * 들어 있는 규칙({@link PostImageService#keyPrefixOf})으로 한 번 더 거릅니다.
+     *
+     * <p>거른 URL은 그냥 안 지웁니다 — 애초에 우리가 지울 대상이 아니었습니다.
+     */
+    private List<String> ownedByAuthor(Long userId, List<String> imageUrls) {
+        String keyPrefix = PostImageService.keyPrefixOf(userId);
+        return imageUrls.stream()
+                .filter(url -> {
+                    String key = imageStorage.keyOf(url);
+                    return key != null && key.startsWith(keyPrefix);
+                })
+                .toList();
+    }
+
     private void deleteImagesAfterCommit(List<String> imageUrls) {
         if (imageUrls.isEmpty()) {
             return;

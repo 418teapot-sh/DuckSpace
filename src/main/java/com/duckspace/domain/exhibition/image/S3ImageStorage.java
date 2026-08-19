@@ -71,7 +71,7 @@ public class S3ImageStorage implements ImageStorage {
 
     @Override
     public void deleteByUrl(String imageUrl) {
-        String key = keyFrom(imageUrl);
+        String key = keyOf(imageUrl);
         if (key == null) {
             return;
         }
@@ -86,7 +86,7 @@ public class S3ImageStorage implements ImageStorage {
 
     @Override
     public byte[] download(String imageUrl) {
-        String key = keyFrom(imageUrl);
+        String key = keyOf(imageUrl);
         if (key == null) {
             throw new UncheckedIOException(new IOException("이 버킷의 이미지가 아닙니다: " + imageUrl));
         }
@@ -98,7 +98,8 @@ public class S3ImageStorage implements ImageStorage {
         }
     }
 
-    private String keyFrom(String imageUrl) {
+    @Override
+    public String keyOf(String imageUrl) {
         return StorageUrls.keyFrom(publicBaseUrl, imageUrl);
     }
 }

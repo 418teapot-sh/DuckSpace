@@ -390,13 +390,15 @@ class PostServiceTest {
             Post post = casualPost(1L, 10L);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
             given(postImageRepository.findByPost_IdOrderBySortOrderAsc(1L)).willReturn(List.of(
-                    new PostImage(post, "keep.png", 0),
-                    new PostImage(post, "remove.png", 1)));
+                    new PostImage(post, url("posts/10/keep.png"), 0),
+                    new PostImage(post, url("posts/10/remove.png"), 1)));
+            givenOurStorage();
 
-            postService.updateCasual(1L, 10L, new CasualPostRequest("본문", List.of("keep.png"), null));
+            postService.updateCasual(1L, 10L,
+                    new CasualPostRequest("본문", List.of(url("posts/10/keep.png")), null));
 
-            verify(imageStorage).deleteByUrl("remove.png");
-            verify(imageStorage, never()).deleteByUrl("keep.png");
+            verify(imageStorage).deleteByUrl(url("posts/10/remove.png"));
+            verify(imageStorage, never()).deleteByUrl(url("posts/10/keep.png"));
         }
 
         @Test
@@ -404,13 +406,38 @@ class PostServiceTest {
             Post post = casualPost(1L, 10L);
             given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
             given(postImageRepository.findByPost_IdOrderBySortOrderAsc(1L)).willReturn(List.of(
-                    new PostImage(post, "a.png", 0),
-                    new PostImage(post, "b.png", 1)));
+                    new PostImage(post, url("posts/10/a.png"), 0),
+                    new PostImage(post, url("posts/10/b.png"), 1)));
+            givenOurStorage();
 
             postService.updateCasual(1L, 10L, new CasualPostRequest("본문", List.of(), null));
 
-            verify(imageStorage).deleteByUrl("a.png");
-            verify(imageStorage).deleteByUrl("b.png");
+            verify(imageStorage).deleteByUrl(url("posts/10/a.png"));
+            verify(imageStorage).deleteByUrl(url("posts/10/b.png"));
+        }
+
+        @Test
+        void 남의_이미지_주소는_지우지_않는다() {
+            // 남의 URL 을 내 글에 넣고 imageUrls: [] 로 PATCH 하면 그 파일이 저장소에서
+            // 지워지던 구멍입니다(C-01). saveImages 가 소유를 확인하지 않아서 남의 주소가
+            // 그대로 저장될 수 있으므로, 지우는 쪽에서 키 접두사로 한 번 더 거릅니다.
+            Post post = casualPost(1L, 10L);
+            given(postRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(post));
+            given(postImageRepository.findByPost_IdOrderBySortOrderAsc(1L)).willReturn(List.of(
+                    new PostImage(post, url("posts/10/mine.png"), 0),
+                    new PostImage(post, url("users/42/victim-profile.png"), 1),
+                    new PostImage(post, url("posts/42/victim-post.png"), 2),
+                    new PostImage(post, url("exhibitions/7/victim-goods.png"), 3),
+                    new PostImage(post, "https://other-host/x.png", 4)));
+            givenOurStorage();
+
+            postService.updateCasual(1L, 10L, new CasualPostRequest("본문", List.of(), null));
+
+            verify(imageStorage).deleteByUrl(url("posts/10/mine.png"));
+            verify(imageStorage, never()).deleteByUrl(url("users/42/victim-profile.png"));
+            verify(imageStorage, never()).deleteByUrl(url("posts/42/victim-post.png"));
+            verify(imageStorage, never()).deleteByUrl(url("exhibitions/7/victim-goods.png"));
+            verify(imageStorage, never()).deleteByUrl("https://other-host/x.png");
         }
 
         @Test
@@ -533,5 +560,21 @@ class PostServiceTest {
 
             assertThat(exception.getErrorCode()).isEqualTo(PostErrorCode.INVALID_BOARD_TYPE);
         }
+    }
+
+    private static final String BASE_URL = "https://cdn.duckspace.test";
+
+    private static String url(String key) {
+        return BASE_URL + "/" + key;
+    }
+
+    /** 실제 저장소처럼 base URL 을 떼어 키를 돌려줍니다. 남의 호스트면 null 입니다. */
+    private void givenOurStorage() {
+        given(imageStorage.keyOf(any())).willAnswer(invocation -> {
+            String given = invocation.getArgument(0);
+            return (given != null && given.startsWith(BASE_URL + "/"))
+                    ? given.substring(BASE_URL.length() + 1)
+                    : null;
+        });
     }
 }
