@@ -75,6 +75,15 @@ class ExhibitionControllerSecurityTest {
     }
 
     @Test
+    @DisplayName("비로그인도 검색 탭 장식장 피드를 볼 수 있다")
+    void 장식장_피드는_공개() throws Exception {
+        given(exhibitionService.getRecent(any(), isNull())).willReturn(List.of());
+
+        mockMvc.perform(get("/api/exhibitions"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("비로그인도 장식장 상세를 볼 수 있다")
     void 상세는_공개() throws Exception {
         given(exhibitionService.getDetail(eq(3L), isNull())).willReturn(detail());

@@ -57,6 +57,8 @@ public class SecurityConfig {
      * 누군가 {@code /api/exhibitions/mine} 같은 걸 추가했을 때 조용히 공개됩니다.
      */
     private static final String[] PUBLIC_GET_ENDPOINTS = {
+            // 검색 탭 기본 화면의 장식장 피드(GET). 같은 경로의 POST(생성)는 인증이 필요합니다.
+            "/api/exhibitions",
             "/api/exhibitions/popular",
             "/api/exhibitions/{exhibitionId:[0-9]+}",
             "/api/search/exhibitions",
