@@ -99,7 +99,7 @@ class FollowControllerTest {
     @Test
     void following_목록을_정상적으로_내려준다() throws Exception {
         given(followService.getFollowing(eq(2L), eq(null), eq(null)))
-                .willReturn(List.of(new FollowUserResponse(3L, "닉네임")));
+                .willReturn(List.of(new FollowUserResponse(3L, "닉네임", null)));
 
         mockMvc.perform(get("/api/users/2/following")
                         .with(user(new AuthUser(1L, Role.USER))))
