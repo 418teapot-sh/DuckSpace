@@ -157,6 +157,25 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
+    @DisplayName("카드 미리보기용 굿즈 전체 — 여러 장식장의 굿즈를 한 번에, id asc 순으로 가져온다")
+    void 굿즈_전체_한번에조회() {
+        Exhibition a = exhibition(1L, "A");
+        Exhibition b = exhibition(2L, "B");
+        ExhibitionItem a1 = item(a, "a1", "먼저", ItemStatus.READY);
+        ExhibitionItem a2 = item(a, "a2", "나중", ItemStatus.READY);
+        item(a, "a3", "처리중", ItemStatus.PENDING);
+        ExhibitionItem b1 = item(b, "b1", "B굿즈", ItemStatus.READY);
+        entityManager.flush();
+
+        List<ExhibitionItem> items = exhibitionItemRepository.findAllByExhibitionIdsAndStatus(
+                List.of(a.getId(), b.getId()), ItemStatus.READY);
+
+        assertThat(items).extracting(ExhibitionItem::getId)
+                .as("장식장 A의 READY 굿즈 2개(id asc) 다음 장식장 B의 굿즈, PENDING은 제외")
+                .containsExactly(a1.getId(), a2.getId(), b1.getId());
+    }
+
+    @Test
     @DisplayName("좋아요 수 — 여러 장식장을 한 번에 센다")
     void 좋아요수_한번에조회() {
         Exhibition a = exhibition(1L, "A");
