@@ -8,8 +8,12 @@
 jwt:
   secret: test-only-secret-key-do-not-use-in-production-0123456789
 
+# 키를 비워둬야 AbstractOpenAiSummaryClient 가 비활성 경로를 탑니다.
+# 값이 있으면(더미여도) enabled 로 판정돼서, 테스트를 돌릴 때마다 api.openai.com 으로
+# 실제 요청이 나갑니다 — PopupAdminSmokeTest 가 create/update 를 태우기 때문입니다.
+# 401 을 받고 null 로 폴백돼 테스트는 통과하지만, 외부 네트워크에 의존하게 됩니다.
 openai:
-  api-key: test-dummy-key
+  api-key:
   model: gpt-4o-mini
 
 # 테스트에는 AWS 자격증명이 없습니다.
