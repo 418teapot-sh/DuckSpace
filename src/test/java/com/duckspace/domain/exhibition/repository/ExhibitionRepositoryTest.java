@@ -188,6 +188,31 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
+    @DisplayName("검색 탭 피드 — 좋아요와 무관하게 최신 등록순(id desc)이다")
+    void 최신순_정렬() {
+        Exhibition oldest = exhibition(1L, "먼저등록");
+        Exhibition newest = exhibition(2L, "나중등록");
+        // 인기순과 다르다는 걸 보여주려고 오래된 쪽에 좋아요를 몰아줍니다.
+        like(oldest, 10L);
+        like(oldest, 11L);
+        entityManager.flush();
+
+        List<Long> ids = exhibitionRepository.findRecentIds(PageRequest.of(0, 10));
+
+        assertThat(ids).containsExactly(newest.getId(), oldest.getId());
+    }
+
+    @Test
+    @DisplayName("검색 탭 피드 — limit 만큼만 가져온다")
+    void 최신순_limit() {
+        exhibition(1L, "A");
+        Exhibition newest = exhibition(2L, "B");
+        entityManager.flush();
+
+        assertThat(exhibitionRepository.findRecentIds(PageRequest.of(0, 1))).containsExactly(newest.getId());
+    }
+
+    @Test
     @DisplayName("내 장식장만, 만든 순서대로 가져온다")
     void 내_장식장_목록() {
         Exhibition mineOld = exhibition(1L, "내 첫 장식장");
