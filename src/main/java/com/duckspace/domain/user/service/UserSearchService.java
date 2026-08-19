@@ -60,9 +60,14 @@ public class UserSearchService {
      *
      * <p>삭제 + INSERT + 트리밍은 전부 {@link UserSearchHistoryWriter}가 별도 트랜잭션에서
      * 함께 수행합니다(이유는 그 클래스의 문서 참고 — 트랜잭션을 나누면 방금 커밋한 INSERT를
-     * 트리밍 쿼리가 못 보는 문제가 있었습니다). 동시에 같은 조합이 다시 클릭되면 유니크 제약
-     * ({@code uk_search_history_searcher_searched}) 위반이 나는데, 이미 원하는 상태(최근
-     * 내역에 있음)가 동시 요청으로 달성된 것이므로 무시합니다.
+     * 트리밍 쿼리가 못 보는 문제가 있었습니다).
+     *
+     * <p>유니크 제약({@code uk_search_history_searcher_searched}) 위반과 FK 위반(존재 확인과
+     * INSERT 사이에 searcher/target이 삭제됨)이 둘 다 같은 {@link DataIntegrityViolationException}
+     * 으로 올라오기 때문에, 잡은 뒤 재확인해서 구분합니다({@code PopupLikeService.like()}와 동일한
+     * 이유·패턴). 이미 있으면 동시 요청이 먼저 넣은 것이므로 성공으로 보고, 없으면 진짜 실패이므로
+     * 예외를 던집니다 — 여기서 구분 안 하고 무조건 무시하면, 탈퇴 같은 기능이 생겼을 때 저장은
+     * 안 됐는데 204로 성공 응답하는 상황이 생깁니다.
      */
     @Transactional
     public void record(Long searcherId, Long targetUserId) {
@@ -72,13 +77,16 @@ public class UserSearchService {
         List<Long> foundIds = userRepository.findAllById(List.of(searcherId, targetUserId)).stream()
                 .map(User::getId)
                 .toList();
-        if (!foundIds.containsAll(List.of(searcherId, targetUserId))) {
+        if (foundIds.size() != 2) {
             throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
         }
 
         try {
             searchHistoryWriter.replace(searcherId, targetUserId, MAX_HISTORY_SIZE);
         } catch (DataIntegrityViolationException e) {
+            if (!searchHistoryRepository.existsBySearcherIdAndSearchedUserId(searcherId, targetUserId)) {
+                throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
+            }
             // 동시 요청이 같은 조합을 먼저 넣은 경우 — 이미 원하는 상태이므로 무시합니다.
         }
     }

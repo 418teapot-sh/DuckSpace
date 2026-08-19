@@ -86,13 +86,27 @@ class UserSearchServiceTest {
     }
 
     @Test
-    @DisplayName("동시에 같은 조합이 다시 클릭돼 유니크 제약에 걸려도(원하는 상태는 이미 달성됨) 예외를 밖으로 던지지 않는다")
+    @DisplayName("동시에 같은 조합이 다시 클릭돼 유니크 제약에 걸렸는데 이미 그 조합이 있으면(원하는 상태 달성됨) 예외를 밖으로 던지지 않는다")
     void 동시_중복_클릭은_예외를_삼킨다() {
         유저_둘_다_존재();
         willThrow(new DataIntegrityViolationException("duplicate key"))
                 .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
+        given(searchHistoryRepository.existsBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID))
+                .willReturn(true);
 
         assertDoesNotThrow(() -> userSearchService.record(SEARCHER_ID, TARGET_ID));
+    }
+
+    @Test
+    @DisplayName("제약 위반이 났는데 재확인해도 없으면(FK 위반 등 진짜 실패) 예외를 그대로 던진다")
+    void 진짜_실패는_예외를_던진다() {
+        유저_둘_다_존재();
+        willThrow(new DataIntegrityViolationException("foreign key constraint fails"))
+                .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
+        given(searchHistoryRepository.existsBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID))
+                .willReturn(false);
+
+        assertThrows(BusinessException.class, () -> userSearchService.record(SEARCHER_ID, TARGET_ID));
     }
 
     @Test

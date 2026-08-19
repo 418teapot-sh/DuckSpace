@@ -29,6 +29,7 @@ import com.duckspace.domain.post.repository.TradeItemRepository;
 import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
+import com.duckspace.global.support.LikeEscaper;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -375,10 +376,7 @@ public class PostService {
         if (keyword == null || keyword.isBlank()) {
             return null;
         }
-        return keyword
-                .replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
+        return LikeEscaper.escape(keyword);
     }
 
     private Pageable pageable(Integer size) {

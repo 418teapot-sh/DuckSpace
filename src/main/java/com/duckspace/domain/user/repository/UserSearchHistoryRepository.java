@@ -23,6 +23,12 @@ public interface UserSearchHistoryRepository extends JpaRepository<UserSearchHis
     /** 이미 검색한 적 있는 유저를 다시 클릭하면 기존 항목을 지우고 새로 추가해서 맨 위로 올립니다. */
     void deleteBySearcherIdAndSearchedUserId(Long searcherId, Long searchedUserId);
 
+    /**
+     * INSERT가 유니크 제약 위반으로 실패했을 때, 동시 요청이 먼저 넣어둔 것인지(성공으로 봐도 됨)
+     * 아니면 다른 이유(예: FK 위반)로 진짜 실패한 것인지 구분하는 데 씁니다.
+     */
+    boolean existsBySearcherIdAndSearchedUserId(Long searcherId, Long searchedUserId);
+
     void deleteAllBySearcherId(Long searcherId);
 
     long countBySearcherId(Long searcherId);
