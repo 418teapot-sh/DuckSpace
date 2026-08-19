@@ -140,23 +140,6 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
-    @DisplayName("대표 이미지 — 장식장마다 가장 먼저 배치된 굿즈 하나씩만 가져온다")
-    void 대표이미지_한번에조회() {
-        Exhibition a = exhibition(1L, "A");
-        Exhibition b = exhibition(2L, "B");
-        ExhibitionItem firstOfA = item(a, "a1", "첫번째", ItemStatus.READY);
-        item(a, "a2", "두번째", ItemStatus.READY);
-        ExhibitionItem firstOfB = item(b, "b1", "B첫번째", ItemStatus.READY);
-        entityManager.flush();
-
-        List<ExhibitionItem> items = exhibitionItemRepository.findFirstItemOfEach(
-                List.of(a.getId(), b.getId()), ItemStatus.READY);
-
-        assertThat(items).extracting(ExhibitionItem::getId)
-                .containsExactlyInAnyOrder(firstOfA.getId(), firstOfB.getId());
-    }
-
-    @Test
     @DisplayName("카드 미리보기용 굿즈 전체 — 여러 장식장의 굿즈를 한 번에, id asc 순으로 가져온다")
     void 굿즈_전체_한번에조회() {
         Exhibition a = exhibition(1L, "A");

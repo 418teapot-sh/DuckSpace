@@ -226,8 +226,6 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of(itemA));
             given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
                     .willReturn(List.of(itemA, itemB));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
@@ -269,8 +267,6 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(STRANGER, List.of(3L))).willReturn(List.of());
 
@@ -309,7 +305,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
             // findAllById 는 순서를 보장하지 않으므로 일부러 뒤집어서 돌려줍니다.
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(second, first));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L, 1L), ItemStatus.READY))
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
                     .willReturn(List.of(itemOf(first, "thumb.png")));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of(3L));
@@ -333,8 +329,6 @@ class ExhibitionServiceTest {
 
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(first, second));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L, 1L), ItemStatus.READY))
-                    .willReturn(List.of(firstItem, secondItem));
             given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
                     .willReturn(List.of(firstItem, secondItem));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
@@ -354,8 +348,6 @@ class ExhibitionServiceTest {
 
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of(itemOf(e, "thumb.png")));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
 
@@ -417,7 +409,7 @@ class ExhibitionServiceTest {
 
             assertThat(exhibitionService.search("없는키워드", 10, OWNER)).isEmpty();
             verify(exhibitionRepository, never()).findAllById(any());
-            verify(exhibitionItemRepository, never()).findFirstItemOfEach(any(), any());
+            verify(exhibitionItemRepository, never()).findAllByExhibitionIdsAndStatus(any(), any());
         }
     }
 }
