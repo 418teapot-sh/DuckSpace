@@ -3,6 +3,7 @@ package com.duckspace.domain.exhibition.service;
 import com.duckspace.domain.exhibition.dto.request.CreateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.request.UpdateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
+import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryResponse;
 import com.duckspace.domain.exhibition.entity.Exhibition;
 import com.duckspace.domain.exhibition.entity.ExhibitionItem;
@@ -32,8 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -366,6 +369,63 @@ class ExhibitionServiceTest {
             ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
             verify(exhibitionRepository).findPopularIds(captor.capture());
             assertThat(captor.getValue().getPageSize()).isEqualTo(50);
+        }
+    }
+
+    @Nested
+    @DisplayName("getRecent 메서드는")
+    class Recent {
+
+        @Test
+        @DisplayName("cursor 가 null 이면 리포지토리에도 null 로 넘긴다")
+        void cursor가_null이면_그대로_null() {
+            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of());
+
+            exhibitionService.getRecent(null, 10, OWNER);
+
+            verify(exhibitionRepository).findRecentIds(isNull(), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("cursor 가 0 이하면 첫 페이지로 취급해 null 로 정규화한다")
+        void cursor가_0이하면_null로_정규화한다() {
+            // 장식장 id 는 1부터 시작해서, 0 이하를 그대로 넘기면 e.id < 0 이 되어 데이터가
+            // 있어도 항상 빈 목록이 나옵니다(PR #86 리뷰) — 여기서 null 로 정규화해 막습니다.
+            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of());
+
+            exhibitionService.getRecent(0L, 10, OWNER);
+            exhibitionService.getRecent(-5L, 10, OWNER);
+
+            verify(exhibitionRepository, times(2)).findRecentIds(isNull(), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("유효한 cursor(1 이상)는 그대로 리포지토리에 넘긴다")
+        void 유효한_cursor는_그대로_넘긴다() {
+            given(exhibitionRepository.findRecentIds(eq(5L), any(Pageable.class))).willReturn(List.of());
+
+            exhibitionService.getRecent(5L, 10, OWNER);
+
+            verify(exhibitionRepository).findRecentIds(eq(5L), any(Pageable.class));
+        }
+
+        @Test
+        @DisplayName("다음 페이지가 있으면 hasNext 와 nextCursor 를 채운다")
+        void 다음_페이지가_있으면_hasNext를_채운다() {
+            Exhibition newest = exhibitionWithId(3L, 2L, "최신");
+
+            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of(3L, 2L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(newest));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of());
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
+
+            ExhibitionSummaryPageResponse result = exhibitionService.getRecent(null, 1, OWNER);
+
+            assertThat(result.items()).hasSize(1);
+            assertThat(result.hasNext()).isTrue();
+            assertThat(result.nextCursor()).isEqualTo(3L);
         }
     }
 

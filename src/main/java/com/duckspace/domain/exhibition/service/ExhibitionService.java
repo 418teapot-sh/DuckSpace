@@ -3,6 +3,7 @@ package com.duckspace.domain.exhibition.service;
 import com.duckspace.domain.exhibition.dto.request.CreateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.request.UpdateExhibitionRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
+import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryResponse;
 import com.duckspace.domain.exhibition.entity.Exhibition;
 import com.duckspace.domain.exhibition.entity.ExhibitionItem;
@@ -16,6 +17,7 @@ import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -132,11 +134,25 @@ public class ExhibitionService {
         return toSummaries(ids, viewerId);
     }
 
-    /** 검색 탭 기본 화면의 장식장 피드. 필터 없이 최신 등록순입니다. */
-    public List<ExhibitionSummaryResponse> getRecent(Integer limit, Long viewerId) {
-        List<Long> ids = exhibitionRepository.findRecentIds(
-                PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
-        return toSummaries(ids, viewerId);
+    /**
+     * 검색 탭 기본 화면의 장식장 피드. 필터 없이 최신 등록순 커서 페이징입니다.
+     *
+     * <p>{@code cursor} 가 0 이하면 첫 페이지로 취급합니다 — 장식장 id 는 1부터 시작해서,
+     * 0 이하를 그대로 리포지토리에 넘기면 데이터가 있어도 빈 목록이 나옵니다. 정상 흐름
+     * (응답의 {@code nextCursor} 를 그대로 다음 요청에 넣는 방식)에서는 안 생기지만,
+     * 프론트가 커서를 {@code null} 대신 {@code 0}으로 초기화하는 실수를 해도 "더 이상 데이터
+     * 없음"과 구분 안 되는 상태로 조용히 새어나가지 않도록 여기서 방어합니다(PR #86 리뷰).
+     */
+    public ExhibitionSummaryPageResponse getRecent(Long cursor, Integer size, Long viewerId) {
+        int pageSize = Paging.normalize(size, DEFAULT_LIMIT, MAX_LIMIT);
+        Pageable pageable = PageRequest.of(0, pageSize + 1);
+        Long normalizedCursor = (cursor == null || cursor <= 0) ? null : cursor;
+
+        List<Long> found = exhibitionRepository.findRecentIds(normalizedCursor, pageable);
+
+        Paging.Slice<Long> sliced = Paging.slice(found, pageSize, id -> id);
+        return new ExhibitionSummaryPageResponse(
+                toSummaries(sliced.page(), viewerId), sliced.nextCursor(), sliced.hasNext());
     }
 
     /**
