@@ -122,8 +122,23 @@ public class ImageCleanup {
     /** 참조 확인이 일시 오류로 실패했을 때 배치를 다시 시도하는 횟수(첫 시도 포함). */
     private static final int MAX_ATTEMPTS = 3;
 
+    /** 재시도 사이에 쉬는 시간. 시도마다 배로 늘립니다. */
+    private static final long RETRY_BACKOFF_MILLIS = 200;
+
+    /**
+     * 참조 확인 쿼리 하나에 넣을 URL 개수 상한.
+     *
+     * <p>장식장 통째 삭제는 굿즈 수만큼 URL 을 넘기는데 상한이 없습니다. 그대로 두면 in 절이
+     * 수백~수천 개짜리가 되어 파싱 비용이 커지고, 파라미터 수가 매번 달라져 실행 계획 캐시도
+     * 흔들립니다. 나눠서 돌리면 쿼리 수는 늘어도 각각이 예측 가능한 크기가 됩니다.
+     */
+    private static final int REFERENCE_CHECK_BATCH = 200;
+
     private void deleteUnreferenced(List<String> imageUrls) {
-        deleteUnreferenced(imageUrls, MAX_ATTEMPTS - 1);
+        for (int from = 0; from < imageUrls.size(); from += REFERENCE_CHECK_BATCH) {
+            int to = Math.min(from + REFERENCE_CHECK_BATCH, imageUrls.size());
+            deleteUnreferenced(imageUrls.subList(from, to), MAX_ATTEMPTS - 1);
+        }
     }
 
     /**
@@ -133,8 +148,8 @@ public class ImageCleanup {
      * 실행기를 오래 점유합니다. in 절 두 번이면 끝나는 일입니다.
      *
      * <p><b>참조 확인이 실패하면 지우지 않습니다</b> — 확인 없이 지우는 쪽이 더 위험합니다.
-     * 대신 배치를 큐 뒤로 다시 넣어 재시도하고(커넥션 풀 고갈 같은 일시 오류 대비), 끝내
-     * 실패하면 수동 회수가 가능하도록 대상 URL 전체를 에러 로그로 남깁니다.
+     * 대신 잠깐 쉬었다가 다시 시도하고(커넥션 풀 고갈 같은 일시 오류 대비), 끝내 실패하면
+     * 수동 회수가 가능하도록 대상 URL 전체를 에러 로그로 남깁니다.
      */
     private void deleteUnreferenced(List<String> imageUrls, int retriesLeft) {
         Set<String> referenced;
@@ -145,7 +160,14 @@ public class ImageCleanup {
             if (retriesLeft > 0) {
                 log.warn("참조 확인 실패, 배치를 다시 시도합니다 ({}건, 남은 시도 {}): {}",
                         imageUrls.size(), retriesLeft, e.toString());
-                submit(() -> deleteUnreferenced(imageUrls, retriesLeft - 1));
+                // 큐에 다시 넣으면 (보통 큐가 비어 있어서) 곧바로 다시 실행돼, 커넥션 풀
+                // 고갈이나 페일오버 같은 "일시" 오류가 사라질 틈이 없습니다. 게다가 큐가
+                // 가득 차 있으면 submit 의 인라인 폴백이 걸려 같은 스택에서 즉시 재귀합니다.
+                // 정리 스레드에서 잠깐 쉬었다가 이어서 시도합니다 — 원래 지연이 허용되는
+                // 경로라 이 스레드가 잠시 멈추는 편이 낫습니다.
+                if (sleepBeforeRetry(MAX_ATTEMPTS - retriesLeft)) {
+                    deleteUnreferenced(imageUrls, retriesLeft - 1);
+                }
             } else {
                 log.error("이미지 정리를 포기합니다. 수동 회수 대상: {}", imageUrls, e);
             }
@@ -161,6 +183,21 @@ public class ImageCleanup {
         }
     }
 
+    /**
+     * @return 계속 진행해도 되면 {@code true}. 인터럽트를 받았으면 {@code false} 로,
+     *         호출부는 재시도를 그만둡니다(종료 중이라는 뜻입니다).
+     */
+    private boolean sleepBeforeRetry(int attempt) {
+        try {
+            Thread.sleep(RETRY_BACKOFF_MILLIS * attempt);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("정리 재시도가 중단됐습니다. 수동 회수 대상일 수 있습니다.");
+            return false;
+        }
+    }
+
     private void deleteQuietly(String imageUrl) {
         try {
             imageStorage.deleteByUrl(imageUrl);
@@ -169,7 +206,16 @@ public class ImageCleanup {
         }
     }
 
+    /**
+     * null · 공백을 걸러내고 <b>중복을 없앱니다.</b>
+     *
+     * <p>같은 사진을 한 장식장에 여러 번 놓는 게 정식 기능이라, 그 장식장을 지우면 같은 URL 이
+     * 배치 수만큼 들어옵니다. 중복을 안 지우면 같은 키에 저장소 DELETE 를 그 수만큼 보냅니다.
+     */
     private static List<String> clean(List<String> imageUrls) {
-        return imageUrls.stream().filter(url -> url != null && !url.isBlank()).toList();
+        return imageUrls.stream()
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .toList();
     }
 }
