@@ -141,18 +141,38 @@ class ExhibitionImageProcessorTest {
         given(removeBgClient.isEnabled()).willReturn(true);
         given(removeBgClient.removeBackground(any(), anyString()))
                 .willThrow(new InterruptedException("shutting down"));
-        given(imageStorage.upload(anyString(), any(), anyString())).willReturn("https://cdn/original.png");
+
+        // 실제 저장소·DB 는 인터럽트된 스레드에서 동작하지 않습니다 — HikariCP 는 커넥션 획득을
+        // SQLException 으로 거부하고, Files.write 는 ClosedByInterruptException 으로 끊깁니다.
+        // 목은 그걸 흉내내지 않아서, 이 재현이 없으면 "복구보다 플래그를 먼저 세우는" 순서
+        // 버그를 통과시켜 버립니다(실제로 통과하고 있었습니다).
+        given(imageStorage.upload(anyString(), any(), anyString())).willAnswer(invocation -> {
+            failIfInterrupted();
+            return "https://cdn/original.png";
+        });
+        given(statusWriter.markFailed(anyLong(), any())).willAnswer(invocation -> {
+            failIfInterrupted();
+            return true;
+        });
 
         try {
             handle();
 
+            verify(statusWriter)
+                    .markFailed(ITEM_ID, "https://cdn/original.png");
             assertThat(Thread.currentThread().isInterrupted())
-                    .as("인터럽트를 삼키면 종료 중이라는 신호가 사라집니다")
+                    .as("복구가 끝난 뒤에는 종료 중이라는 신호를 되살려야 합니다")
                     .isTrue();
-            verify(statusWriter).markFailed(ITEM_ID, "https://cdn/original.png");
         } finally {
             // 다음 테스트로 인터럽트 상태가 새어나가지 않게 지웁니다.
             Thread.interrupted();
+        }
+    }
+
+    /** 인터럽트된 스레드에서 I/O 가 실패하는 실제 동작을 흉내냅니다. */
+    private static void failIfInterrupted() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new IllegalStateException("Interrupted during connection acquisition");
         }
     }
 
