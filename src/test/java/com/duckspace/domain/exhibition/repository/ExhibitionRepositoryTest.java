@@ -294,4 +294,23 @@ class ExhibitionRepositoryTest {
         assertThat(ownerView).as("주인은 처리 중인 것도 봐야 조치할 수 있습니다").hasSize(2);
         assertThat(guestView).as("남에게는 완료된 것만 보입니다").hasSize(1);
     }
+
+    @Test
+    @DisplayName("내 장식장 목록은 커서로 51번째 이후에도 닿는다")
+    void 내_장식장_커서_더보기() {
+        // 상한(50)만 있고 커서가 없으면, 자기 장식장인데도 그 뒤로는 볼 방법이 없었습니다.
+        Exhibition first = exhibition(1L, "1번");
+        Exhibition second = exhibition(1L, "2번");
+        Exhibition third = exhibition(1L, "3번");
+        exhibition(2L, "남의 것");
+        entityManager.flush();
+
+        List<Long> page1 = exhibitionRepository.findIdsByUserId(1L, PageRequest.of(0, 2));
+        assertThat(page1).containsExactly(first.getId(), second.getId());
+
+        List<Long> page2 = exhibitionRepository.findIdsByUserIdAfter(1L, page1.get(1), PageRequest.of(0, 2));
+        assertThat(page2)
+                .as("커서 뒤엣것만, 남의 장식장은 섞이지 않아야 합니다")
+                .containsExactly(third.getId());
+    }
 }

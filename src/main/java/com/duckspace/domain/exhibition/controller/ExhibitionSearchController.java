@@ -41,7 +41,7 @@ public class ExhibitionSearchController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer limit) {
         // 공개 엔드포인트라 비로그인이면 authUser 가 null 입니다. (ExhibitionController.viewerId 주석 참고)
-        Long viewerId = (authUser == null) ? null : authUser.getUserId();
+        Long viewerId = AuthUser.idOrNull(authUser);
         return ApiResponse.success(exhibitionService.search(keyword, limit, viewerId));
     }
 }

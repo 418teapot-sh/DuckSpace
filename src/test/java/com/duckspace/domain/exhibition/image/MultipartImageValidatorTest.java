@@ -76,6 +76,32 @@ class MultipartImageValidatorTest {
     }
 
     @Test
+    @DisplayName("Content-Type 에 파라미터가 붙어 있어도 받아준다")
+    void 파라미터가_붙은_헤더도_통과() throws IOException {
+        // 일부 모바일 클라이언트가 image/jpeg; charset=UTF-8 처럼 보냅니다. 문자열 완전 일치로
+        // 비교하면 바이트는 멀쩡한 이미지인데도 400 으로 거부하게 됩니다.
+        byte[] data = pngBytes(50, 50);
+
+        MultipartImageValidator.validate(
+                new MockMultipartFile("image", "goods.png", "image/png; charset=UTF-8", data), data);
+
+        MultipartImageValidator.validate(
+                new MockMultipartFile("image", "goods.png", "IMAGE/PNG", data), data);
+    }
+
+    @Test
+    @DisplayName("깨진 Content-Type 은 거부한다")
+    void 깨진_헤더는_거부() throws IOException {
+        byte[] data = pngBytes(50, 50);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MultipartImageValidator.validate(
+                        new MockMultipartFile("image", "goods.png", "image//png;;", data), data));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
+    }
+
+    @Test
     @DisplayName("헤더를 속여도 실제 바이트가 이미지가 아니면 거부한다")
     void 위장_파일은_거부() {
         byte[] data = "#!/bin/sh".getBytes();
