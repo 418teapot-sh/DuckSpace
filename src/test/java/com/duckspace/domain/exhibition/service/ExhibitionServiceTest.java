@@ -251,6 +251,45 @@ class ExhibitionServiceTest {
     }
 
     @Nested
+    @DisplayName("getPrimary 메서드는")
+    class Primary {
+
+        @Test
+        void 가장_먼저_만든_장식장을_돌려준다() {
+            Exhibition e = exhibitionWithId(3L, OWNER, "내 장식장");
+
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of());
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(STRANGER, List.of(3L))).willReturn(List.of());
+
+            ExhibitionSummaryResponse result = exhibitionService.getPrimary(OWNER, STRANGER);
+
+            assertThat(result.exhibitionId()).isEqualTo(3L);
+
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(exhibitionRepository).findIdsByUserId(eq(OWNER), captor.capture());
+            assertThat(captor.getValue().getPageSize())
+                    .as("대표 장식장은 하나만 필요합니다")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        void 장식장이_하나도_없으면_예외() {
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionService.getPrimary(OWNER, STRANGER));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ExhibitionErrorCode.EXHIBITION_NOT_FOUND);
+        }
+    }
+
+    @Nested
     @DisplayName("getPopular 메서드는")
     class Popular {
 
