@@ -47,6 +47,10 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     @Query("select e.id from Exhibition e order by e.id desc")
     List<Long> findRecentIds(Pageable pageable);
 
+    /** 장식장 피드 더보기. 커서보다 오래된 것만. */
+    @Query("select e.id from Exhibition e where e.id < :cursor order by e.id desc")
+    List<Long> findRecentIds(@Param("cursor") Long cursor, Pageable pageable);
+
     /**
      * 굿즈 이름으로 장식장을 찾습니다. 매칭된 굿즈가 놓인 장식장을 결과로 돌려줍니다.
      *

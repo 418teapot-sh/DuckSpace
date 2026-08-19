@@ -205,13 +205,26 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
-    @DisplayName("검색 탭 피드 — limit 만큼만 가져온다")
+    @DisplayName("검색 탭 피드 — size 만큼만 가져온다")
     void 최신순_limit() {
         exhibition(1L, "A");
         Exhibition newest = exhibition(2L, "B");
         entityManager.flush();
 
         assertThat(exhibitionRepository.findRecentIds(PageRequest.of(0, 1))).containsExactly(newest.getId());
+    }
+
+    @Test
+    @DisplayName("검색 탭 피드 더보기 — 커서보다 오래된 것만 가져온다")
+    void 최신순_커서() {
+        Exhibition oldest = exhibition(1L, "A");
+        Exhibition middle = exhibition(2L, "B");
+        exhibition(3L, "C");
+        entityManager.flush();
+
+        List<Long> ids = exhibitionRepository.findRecentIds(middle.getId() + 1, PageRequest.of(0, 10));
+
+        assertThat(ids).containsExactly(middle.getId(), oldest.getId());
     }
 
     @Test
