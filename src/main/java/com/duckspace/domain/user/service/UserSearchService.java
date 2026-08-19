@@ -12,6 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -24,7 +25,7 @@ public class UserSearchService {
     private static final int DEFAULT_LIMIT = 10;
     private static final int MAX_LIMIT = 50;
     private static final int MAX_HISTORY_SIZE = 3;
-    private static final int MAX_ATTEMPTS = 5;
+    private static final int MAX_ATTEMPTS = 8;
     private static final long RETRY_BACKOFF_MILLIS = 20;
 
     private final UserRepository userRepository;
@@ -81,11 +82,15 @@ public class UserSearchService {
      * 롤백</b>시킬 수 있습니다({@link TransientDataAccessException}, 예: 락 대기 데드락). 이건
      * 버그가 아니라 InnoDB의 정상적인 데드락 해소 동작이고, 진 쪽이 살짝 쉬었다 재시도하면
      * 대부분 통과합니다(먼저 커밋한 트랜잭션들이 락을 놓을 시간을 벌어줌) — 그래서
-     * {@value #MAX_ATTEMPTS}번까지, 매번 짧게 쉬면서 재시도합니다. 이 메서드(record) 자체의
-     * 바깥 트랜잭션은 아무것도 쓰지 않아서(전부 REQUIRES_NEW writer가 처리) 재시도 사이에
-     * 걸려 있는 락이 없습니다.
+     * {@value #MAX_ATTEMPTS}번까지, 매번 짧게 쉬면서 재시도합니다.
+     *
+     * <p>이 메서드는 일부러 <b>트랜잭션을 안 씁니다</b>({@code NOT_SUPPORTED}) — 쓰기는 전부
+     * REQUIRES_NEW writer가 자기 트랜잭션에서 처리해서 바깥 트랜잭션이 지키는 원자성이 없는데,
+     * 트랜잭션을 걸어두면 재시도 사이의 {@code sleep} 동안에도 커넥션을 쥔 채로 대기하게 됩니다.
+     * 데드락이 잦은 상황(=커넥션이 가장 아쉬운 상황)에 요청당 커넥션을 하나 더 오래 붙잡는
+     * 셈이라 트랜잭션 자체를 뗐습니다.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void record(Long searcherId, Long targetUserId) {
         if (searcherId.equals(targetUserId)) {
             return;
@@ -108,16 +113,14 @@ public class UserSearchService {
                 if (attempt == MAX_ATTEMPTS) {
                     throw e;
                 }
-                sleepBeforeRetry(attempt);
+                try {
+                    Thread.sleep(RETRY_BACKOFF_MILLIS * attempt);
+                } catch (InterruptedException ie) {
+                    // 인터럽트 중엔 backoff 없이 재시도를 몰아치는 대신 바로 포기합니다.
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
-        }
-    }
-
-    private void sleepBeforeRetry(int attempt) {
-        try {
-            Thread.sleep(RETRY_BACKOFF_MILLIS * attempt);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
         }
     }
 

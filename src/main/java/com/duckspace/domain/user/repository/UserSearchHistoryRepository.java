@@ -46,6 +46,11 @@ public interface UserSearchHistoryRepository extends JpaRepository<UserSearchHis
     @Query("delete from UserSearchHistory h where h.searcher.id = :searcherId")
     void deleteAllBySearcherId(@Param("searcherId") Long searcherId);
 
+    /**
+     * 프로덕션 호출부는 없습니다 — 트리밍이 "count 확인 후 삭제"에서 "최신 N개 조회 후 벌크
+     * 삭제"로 바뀌면서(3라운드 리뷰) 개수를 직접 셀 일이 없어졌습니다. 테스트에서 결과 검증용으로
+     * 씁니다.
+     */
     long countBySearcherId(Long searcherId);
 
     /** 트리밍용 — 최신 N개만 남기고 지울 때, 남길 id 목록을 먼저 뽑습니다. */
