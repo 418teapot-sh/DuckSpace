@@ -42,7 +42,7 @@ public class LocalImageStorage implements ImageStorage {
             Files.write(target, content);
             return publicBaseUrl + "/" + key;
         } catch (IOException e) {
-            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED, e);
         }
     }
 

@@ -72,7 +72,7 @@ public class ProfileImageService {
         try {
             return image.getBytes();
         } catch (IOException e) {
-            throw new BusinessException(UserErrorCode.IMAGE_UPLOAD_FAILED);
+            throw new BusinessException(UserErrorCode.IMAGE_UPLOAD_FAILED, e);
         }
     }
 

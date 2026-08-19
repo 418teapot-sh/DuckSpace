@@ -31,7 +31,7 @@ public final class MultipartImageValidator {
         try {
             return image.getBytes();
         } catch (IOException e) {
-            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED, e);
         }
     }
 
