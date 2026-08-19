@@ -10,6 +10,7 @@ import java.io.UncheckedIOException;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 
 /**
@@ -73,6 +74,43 @@ public final class ImageInspector {
     /** {@link #detectFormat} 결과가 우리가 받아주는 포맷인지. */
     public static boolean isSupported(byte[] data) {
         return detectFormat(data).filter(SUPPORTED_FORMATS::contains).isPresent();
+    }
+
+    /**
+     * <b>디코딩하지 않고</b> 헤더만 읽어 픽셀 수를 셉니다.
+     *
+     * <p>{@link #MAX_PIXELS} 확인이 {@link #read} 안에만 있으면 <b>백그라운드에서야</b>
+     * 걸립니다. 그러면 요청은 200 으로 접수되고(사용자는 성공한 줄 알고), 원본 바이트를
+     * 든 채 큐를 차지했다가, 한참 뒤 이유도 없이 FAILED 로 끝납니다.
+     * 업로드 시점에 이걸 불러 400 으로 바로 알려주기 위한 것입니다.
+     *
+     * @return 픽셀 수. 이미지로 읽을 수 없으면 비어 있음(포맷 검사에서 이미 걸러집니다)
+     */
+    public static OptionalLong pixelCount(byte[] data) {
+        if (data == null || data.length == 0) {
+            return OptionalLong.empty();
+        }
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                return OptionalLong.empty();
+            }
+            ImageReader reader = readers.next();
+            reader.setInput(input);
+            try {
+                return OptionalLong.of((long) reader.getWidth(0) * reader.getHeight(0));
+            } finally {
+                reader.dispose();
+            }
+        } catch (IOException e) {
+            return OptionalLong.empty();
+        }
+    }
+
+    /** 픽셀 수가 상한 안인지. 크기를 읽을 수 없으면 여기서는 통과시킵니다(포맷 검사가 먼저 거릅니다). */
+    public static boolean withinPixelLimit(byte[] data) {
+        OptionalLong pixels = pixelCount(data);
+        return pixels.isEmpty() || pixels.getAsLong() <= MAX_PIXELS;
     }
 
     /**

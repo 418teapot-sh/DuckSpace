@@ -47,5 +47,11 @@ public final class MultipartImageValidator {
         if (!ImageInspector.isSupported(data)) {
             throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
         }
+        // 용량 제한(10MB)만으로는 디코딩 후 크기를 못 막습니다 — 고압축 PNG 는 몇 MB 로도
+        // 수천만 픽셀이 됩니다. 이 확인이 없으면 200 으로 접수됐다가 백그라운드에서
+        // 이유 없이 FAILED 로 끝나서, 사용자는 왜 실패했는지 알 수 없습니다.
+        if (!ImageInspector.withinPixelLimit(data)) {
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_DIMENSION_TOO_LARGE);
+        }
     }
 }
