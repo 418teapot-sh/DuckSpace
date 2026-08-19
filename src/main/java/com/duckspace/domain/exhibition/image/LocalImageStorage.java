@@ -46,6 +46,15 @@ public class LocalImageStorage implements ImageStorage {
         }
     }
 
+    /**
+     * <b>절대 예외를 던지지 않습니다.</b> 호출부가 그 전제로 짜여 있습니다 —
+     * {@code PendingPostImageCleaner} 와 {@code PostService} 는 목록을 {@code forEach} 로
+     * 돌면서 지우는데, 여기서 하나라도 던지면 <b>남은 정리 대상 전체가 중단</b>됩니다.
+     *
+     * <p>예전에는 {@code resolve(key)} 가 {@code BusinessException} 을 던지는데 catch 가
+     * {@code IOException} 만 잡아서 그대로 새어나갔습니다. 저장된 URL 하나만 이상해도
+     * 배치가 통째로 멈추는 상태였습니다.
+     */
     @Override
     public void deleteByUrl(String imageUrl) {
         String key = keyOf(imageUrl);
@@ -54,7 +63,7 @@ public class LocalImageStorage implements ImageStorage {
         }
         try {
             Files.deleteIfExists(resolve(key));
-        } catch (IOException e) {
+        } catch (Exception e) {
             // 파일이 남는 것보다 삭제 요청이 실패하는 쪽이 사용자에게 더 나쁩니다.
             log.warn("로컬 이미지 삭제 실패: {} ({})", key, e.toString());
         }
@@ -70,6 +79,10 @@ public class LocalImageStorage implements ImageStorage {
             return Files.readAllBytes(resolve(key));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        } catch (BusinessException e) {
+            // resolve() 의 경로 탈출 차단. ImageStorage 는 여기서 UncheckedIOException 을
+            // 약속하고 있어서, 계약에 맞게 바꿔 던집니다.
+            throw new UncheckedIOException(new IOException("읽을 수 없는 경로입니다: " + key, e));
         }
     }
 
