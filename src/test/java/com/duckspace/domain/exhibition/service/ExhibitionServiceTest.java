@@ -220,12 +220,14 @@ class ExhibitionServiceTest {
         @Test
         void 내_장식장을_카드_형태로_돌려준다() {
             Exhibition e = exhibitionWithId(3L, OWNER, "내 장식장");
+            ExhibitionItem itemA = itemOf(e, "thumb.png");
+            ExhibitionItem itemB = itemOf(e, "second.png");
 
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of(itemOf(e, "thumb.png")));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of(itemA, itemB));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
 
@@ -233,6 +235,10 @@ class ExhibitionServiceTest {
 
             assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
             assertThat(result.get(0).thumbnailUrl()).isEqualTo("thumb.png");
+            assertThat(result.get(0).items())
+                    .as("카드 미리보기는 배치된 굿즈 전체를 그대로 담아야 합니다")
+                    .extracting(r -> r.imageUrl())
+                    .containsExactly("thumb.png", "second.png");
         }
 
         @Test
@@ -261,8 +267,6 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(STRANGER, List.of(3L))).willReturn(List.of());
 
@@ -301,7 +305,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
             // findAllById 는 순서를 보장하지 않으므로 일부러 뒤집어서 돌려줍니다.
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(second, first));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L, 1L), ItemStatus.READY))
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
                     .willReturn(List.of(itemOf(first, "thumb.png")));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of(3L));
@@ -316,6 +320,27 @@ class ExhibitionServiceTest {
         }
 
         @Test
+        @DisplayName("굿즈는 각 장식장 자기 것만 들어간다 — 다른 장식장 것과 안 섞인다")
+        void 굿즈는_장식장별로_섞이지_않는다() {
+            Exhibition first = exhibitionWithId(3L, 2L, "인기1위");
+            Exhibition second = exhibitionWithId(1L, 3L, "인기2위");
+            ExhibitionItem firstItem = itemOf(first, "first.png");
+            ExhibitionItem secondItem = itemOf(second, "second.png");
+
+            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
+            given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(first, second));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
+                    .willReturn(List.of(firstItem, secondItem));
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getPopular(10, OWNER);
+
+            assertThat(result.get(0).items()).extracting(r -> r.imageUrl()).containsExactly("first.png");
+            assertThat(result.get(1).items()).extracting(r -> r.imageUrl()).containsExactly("second.png");
+        }
+
+        @Test
         @DisplayName("비로그인(viewerId=null)이어도 좋아요 여부만 false 로 채워 돌려준다")
         void 비로그인도_조회할_수_있다() {
             // 홈 화면(/api/home)이 인증 없이 열려서 viewerId 가 null 로 들어옵니다.
@@ -323,8 +348,6 @@ class ExhibitionServiceTest {
 
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of(itemOf(e, "thumb.png")));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
 
@@ -386,7 +409,7 @@ class ExhibitionServiceTest {
 
             assertThat(exhibitionService.search("없는키워드", 10, OWNER)).isEmpty();
             verify(exhibitionRepository, never()).findAllById(any());
-            verify(exhibitionItemRepository, never()).findFirstItemOfEach(any(), any());
+            verify(exhibitionItemRepository, never()).findAllByExhibitionIdsAndStatus(any(), any());
         }
     }
 }

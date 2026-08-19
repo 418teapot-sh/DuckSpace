@@ -38,6 +38,13 @@ public class ExhibitionService {
     /** 내 장식장은 한 화면에 다 보이는 편이 자연스러워서 기본값을 크게 잡습니다. */
     private static final int MINE_DEFAULT_LIMIT = 20;
 
+    /**
+     * 카드 미리보기에 담을 굿즈 개수 상한(장식장 하나당). 카드 썸네일 크기에서 그 이상은
+     * 어차피 안 보이는데, 목록(최대 {@value #MAX_LIMIT}개 장식장)이 인증 없이 열려 있어서
+     * 상한이 없으면 응답이 장식장 수 × 굿즈 수만큼 무한정 커집니다(#77 리뷰).
+     */
+    private static final int MAX_PREVIEW_ITEMS = 20;
+
     /** 회원가입 시 자동으로 만들어주는 기본 장식장의 이름. */
     private static final String DEFAULT_NAME = "내 장식장";
 
@@ -175,8 +182,22 @@ public class ExhibitionService {
     /**
      * id 목록을 카드 응답으로 채웁니다.
      *
-     * <p>장식장마다 대표 이미지·좋아요 수·내 좋아요 여부를 따로 조회하면 N+1 이 되므로
+     * <p>장식장마다 굿즈 전체·좋아요 수·내 좋아요 여부를 따로 조회하면 N+1 이 되므로
      * <b>각각 쿼리 한 번</b>으로 모아서 가져옵니다. (엔티티 조회까지 총 4쿼리)
+     *
+     * <p>{@code items} 는 카드 미리보기에 배경 위 굿즈 배치를 그대로 그리기 위한 것입니다(#75).
+     * 대표 이미지({@code thumbnailUrl})는 예전엔 {@code findFirstItemOfEach}(min(id) 굿즈)로
+     * 따로 조회했지만, {@code items} 도 같은 조건(READY, id asc)이라 결과가 항상 같은 값이라서
+     * {@code items} 의 첫 번째에서 뽑는 걸로 바꿔 쿼리 하나를 줄였습니다(#77 리뷰).
+     *
+     * <p>{@code items} 는 항상 READY 굿즈만입니다 — 소유자여도 PENDING·FAILED 는 안 들어갑니다.
+     * 상세 화면({@code getDetail})은 소유자에게 처리 중인 굿즈까지 보여주지만(고쳐야 할 게
+     * 있으니까), 카드는 그릴 이미지가 없는 굿즈를 미리보기에 넣을 이유가 없어서 의도적으로
+     * 다릅니다(#77 리뷰에서 확인).
+     *
+     * <p>굿즈 개수는 장식장당 {@value #MAX_PREVIEW_ITEMS}개로 자릅니다 — 목록 자체가 최대
+     * {@value #MAX_LIMIT}개 장식장을 담는 데다, 이 경로 상당수가 인증 없이 열려 있어서 상한이
+     * 없으면 응답이 무한정 커집니다.
      */
     private List<ExhibitionSummaryResponse> toSummaries(List<Long> orderedIds, Long viewerId) {
         if (orderedIds.isEmpty()) {
@@ -186,12 +207,10 @@ public class ExhibitionService {
         Map<Long, Exhibition> exhibitions = exhibitionRepository.findAllById(orderedIds).stream()
                 .collect(Collectors.toMap(Exhibition::getId, Function.identity()));
 
-        // imageUrl 이 null 인 굿즈가 섞이면 Collectors.toMap 이 NPE 를 냅니다.
-        // 지금은 READY 만 조회해 항상 채워져 있지만, 조건이 바뀌면 조용히 터지는 자리라 걸러둡니다.
-        Map<Long, String> thumbnails = exhibitionItemRepository
-                .findFirstItemOfEach(orderedIds, ItemStatus.READY).stream()
-                .filter(item -> item.getImageUrl() != null)
-                .collect(Collectors.toMap(item -> item.getExhibition().getId(), ExhibitionItem::getImageUrl));
+        // id asc 순으로 이미 정렬돼서 나오므로(리포지토리 쿼리), groupingBy 결과 리스트도 그 순서를 유지합니다.
+        Map<Long, List<ExhibitionItem>> itemsByExhibition = exhibitionItemRepository
+                .findAllByExhibitionIdsAndStatus(orderedIds, ItemStatus.READY).stream()
+                .collect(Collectors.groupingBy(item -> item.getExhibition().getId()));
 
         Map<Long, Long> likeCounts = exhibitionLikeRepository.countByExhibitionIds(orderedIds).stream()
                 .collect(Collectors.toMap(
@@ -205,11 +224,19 @@ public class ExhibitionService {
         return orderedIds.stream()
                 .map(exhibitions::get)
                 .filter(Objects::nonNull)
-                .map(exhibition -> ExhibitionSummaryResponse.of(
-                        exhibition,
-                        thumbnails.get(exhibition.getId()),
-                        likeCounts.getOrDefault(exhibition.getId(), 0L),
-                        likedByMe.contains(exhibition.getId())))
+                .map(exhibition -> {
+                    List<ExhibitionItem> items = itemsByExhibition
+                            .getOrDefault(exhibition.getId(), List.of()).stream()
+                            .limit(MAX_PREVIEW_ITEMS)
+                            .toList();
+                    String thumbnailUrl = items.isEmpty() ? null : items.get(0).getImageUrl();
+                    return ExhibitionSummaryResponse.of(
+                            exhibition,
+                            thumbnailUrl,
+                            items,
+                            likeCounts.getOrDefault(exhibition.getId(), 0L),
+                            likedByMe.contains(exhibition.getId()));
+                })
                 .toList();
     }
 
