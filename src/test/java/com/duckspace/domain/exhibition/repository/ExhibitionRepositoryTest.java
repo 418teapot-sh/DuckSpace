@@ -199,7 +199,7 @@ class ExhibitionRepositoryTest {
         like(oldest, 11L);
         entityManager.flush();
 
-        List<Long> ids = exhibitionRepository.findRecentIds(PageRequest.of(0, 10));
+        List<Long> ids = exhibitionRepository.findRecentIds(null, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(newest.getId(), oldest.getId());
     }
@@ -211,7 +211,8 @@ class ExhibitionRepositoryTest {
         Exhibition newest = exhibition(2L, "B");
         entityManager.flush();
 
-        assertThat(exhibitionRepository.findRecentIds(PageRequest.of(0, 1))).containsExactly(newest.getId());
+        assertThat(exhibitionRepository.findRecentIds(null, PageRequest.of(0, 1)))
+                .containsExactly(newest.getId());
     }
 
     @Test
@@ -225,6 +226,18 @@ class ExhibitionRepositoryTest {
         List<Long> ids = exhibitionRepository.findRecentIds(middle.getId() + 1, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(middle.getId(), oldest.getId());
+    }
+
+    @Test
+    @DisplayName("검색 탭 피드 — cursor 가 null 이면 첫 페이지 전체를 가져온다")
+    void 최신순_커서_null이면_첫페이지() {
+        Exhibition oldest = exhibition(1L, "A");
+        Exhibition newest = exhibition(2L, "B");
+        entityManager.flush();
+
+        List<Long> ids = exhibitionRepository.findRecentIds(null, PageRequest.of(0, 10));
+
+        assertThat(ids).containsExactly(newest.getId(), oldest.getId());
     }
 
     @Test
