@@ -19,10 +19,10 @@ public interface PopupLikeRepository extends JpaRepository<PopupLike, Long> {
     void deleteByPopupId(Long popupId);
 
     /** 목록 화면에서 카드마다 하트 표시를 채우기 위한 배치 조회. N+1 방지용. */
-    @Query("select l.popupId from PopupLike l where l.userId = :userId and l.popupId in :popupIds")
+    @Query("select l.popup.id from PopupLike l where l.userId = :userId and l.popup.id in :popupIds")
     List<Long> findLikedPopupIds(@Param("userId") Long userId, @Param("popupIds") List<Long> popupIds);
 
-    /** 위시리스트 화면용 — 최근 찜한 순. join 한 번으로 팝업까지 바로 가져옵니다. */
-    @Query("select p from Popup p join PopupLike l on l.popupId = p.id where l.userId = :userId order by l.id desc")
+    /** 위시리스트 화면용 — 최근 찜한 순. */
+    @Query("select l.popup from PopupLike l where l.userId = :userId order by l.id desc")
     List<Popup> findLikedPopups(@Param("userId") Long userId);
 }

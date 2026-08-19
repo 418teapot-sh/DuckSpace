@@ -18,19 +18,25 @@ import java.util.List;
 public class PopupLikeService {
 
     private final PopupLikeRepository popupLikeRepository;
+    private final PopupLikeWriter popupLikeWriter;
     private final PopupService popupService;
 
-    /** 찜 등록. 더블클릭 등으로 두 요청이 동시에 들어와도 유니크 제약으로 하나만 남습니다. */
+    /**
+     * 찜 등록. 더블클릭 등으로 두 요청이 동시에 들어와도 유니크 제약으로 하나만 남습니다.
+     *
+     * <p>존재 확인과 insert 사이에 팝업이 삭제되는 경우(TOCTOU)는 FK 제약으로 걸러서
+     * 유니크 위반과 구분합니다.
+     */
     @Transactional
     public void like(Long userId, Long popupId) {
         popupService.getPopupOrThrow(popupId);
-        if (popupLikeRepository.existsByPopupIdAndUserId(popupId, userId)) {
-            throw new BusinessException(PopupErrorCode.ALREADY_LIKED);
-        }
         try {
-            popupLikeRepository.saveAndFlush(new PopupLike(popupId, userId));
+            popupLikeWriter.insert(popupId, userId);
         } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(PopupErrorCode.ALREADY_LIKED);
+            if (popupLikeRepository.existsByPopupIdAndUserId(popupId, userId)) {
+                throw new BusinessException(PopupErrorCode.ALREADY_LIKED);
+            }
+            throw new BusinessException(PopupErrorCode.POPUP_NOT_FOUND);
         }
     }
 

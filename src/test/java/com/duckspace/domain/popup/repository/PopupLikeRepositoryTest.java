@@ -48,8 +48,8 @@ class PopupLikeRepositoryTest {
     @Test
     void deleteByPopupId로_지우면_해당_팝업의_찜_행이_전부_사라진다() {
         Popup popup = newPopup("치이카와");
-        popupLikeRepository.save(new PopupLike(popup.getId(), 1L));
-        popupLikeRepository.save(new PopupLike(popup.getId(), 2L));
+        popupLikeRepository.save(new PopupLike(popup, 1L));
+        popupLikeRepository.save(new PopupLike(popup, 2L));
         entityManager.flush();
         entityManager.clear();
 
@@ -67,10 +67,10 @@ class PopupLikeRepositoryTest {
         Popup second = newPopup("나중에찜한팝업");
         Long userId = 10L;
 
-        popupLikeRepository.save(new PopupLike(first.getId(), userId));
-        popupLikeRepository.save(new PopupLike(second.getId(), userId));
+        popupLikeRepository.save(new PopupLike(first, userId));
+        popupLikeRepository.save(new PopupLike(second, userId));
         // 다른 유저의 찜은 섞여 나오면 안 됩니다.
-        popupLikeRepository.save(new PopupLike(first.getId(), 99L));
+        popupLikeRepository.save(new PopupLike(first, 99L));
         entityManager.flush();
         entityManager.clear();
 
@@ -85,7 +85,7 @@ class PopupLikeRepositoryTest {
         Popup liked = newPopup("찜함");
         Popup notLiked = newPopup("안찜함");
         Long userId = 20L;
-        popupLikeRepository.save(new PopupLike(liked.getId(), userId));
+        popupLikeRepository.save(new PopupLike(liked, userId));
         entityManager.flush();
         entityManager.clear();
 
