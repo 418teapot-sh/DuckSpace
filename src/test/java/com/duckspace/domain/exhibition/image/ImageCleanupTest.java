@@ -6,14 +6,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -129,6 +135,39 @@ class ImageCleanupTest {
         imageCleanup.deleteAfterCommit(URL);   // 예외가 밖으로 새지 않아야 합니다.
 
         verify(imageStorage, never()).deleteByUrl(URL);
+    }
+
+    @Test
+    @DisplayName("같은 URL 이 여러 번 들어와도 저장소 삭제는 한 번만 부른다")
+    void 중복_URL_은_한_번만_지운다() {
+        // 같은 사진을 한 장식장에 여러 번 놓는 게 정식 기능이라, 그 장식장을 지우면
+        // 같은 URL 이 배치 수만큼 들어옵니다.
+        List<String> withDuplicates = List.of(URL, URL, URL);
+        given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+
+        imageCleanup.deleteAfterCommit(withDuplicates);
+
+        verify(imageStorage, times(1)).deleteByUrl(URL);
+    }
+
+    @Test
+    @DisplayName("URL 이 많으면 참조 확인 쿼리를 나눠서 보낸다")
+    void 많은_URL_은_나눠서_확인한다() {
+        // 상한이 없으면 굿즈 수만큼의 in 절이 한 번에 나갑니다. 파싱 비용도 크고
+        // 파라미터 수가 매번 달라져 실행 계획 캐시도 흔들립니다.
+        List<String> many = IntStream.range(0, 450)
+                .mapToObj(i -> "https://cdn/goods-%d.png".formatted(i))
+                .toList();
+        given(exhibitionItemRepository.findReferencedUrls(anyList())).willReturn(List.of());
+        given(goodsImageRepository.findReferencedUrls(anyList())).willReturn(List.of());
+
+        imageCleanup.deleteAfterCommit(many);
+
+        ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
+        verify(exhibitionItemRepository, times(3)).findReferencedUrls(captor.capture());
+        assertThat(captor.getAllValues()).extracting(List::size).containsExactly(200, 200, 50);
+        verify(imageStorage, times(450)).deleteByUrl(anyString());
     }
 
     @Test

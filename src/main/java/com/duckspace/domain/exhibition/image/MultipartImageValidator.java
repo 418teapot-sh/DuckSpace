@@ -2,6 +2,8 @@ package com.duckspace.domain.exhibition.image;
 
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.global.exception.BusinessException;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -24,6 +26,24 @@ public final class MultipartImageValidator {
     private MultipartImageValidator() {
     }
 
+    /**
+     * 헤더의 미디어타입만 봅니다. <b>파라미터는 무시합니다</b> — 일부 모바일 클라이언트가
+     * {@code image/jpeg; charset=UTF-8} 처럼 보내는데, 문자열 완전 일치로 비교하면
+     * 바이트는 멀쩡한 JPEG 인데도 400 으로 거부하게 됩니다.
+     */
+    private static boolean isSupportedType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false;
+        }
+        try {
+            MediaType parsed = MediaType.parseMediaType(contentType);
+            String withoutParameters = "%s/%s".formatted(parsed.getType(), parsed.getSubtype());
+            return SUPPORTED_TYPES.contains(withoutParameters.toLowerCase(Locale.ROOT));
+        } catch (InvalidMediaTypeException e) {
+            return false;
+        }
+    }
+
     public static byte[] readBytes(MultipartFile image) {
         if (image == null || image.isEmpty()) {
             throw new BusinessException(ExhibitionErrorCode.EMPTY_IMAGE);
@@ -40,8 +60,7 @@ public final class MultipartImageValidator {
         if (data.length == 0) {
             throw new BusinessException(ExhibitionErrorCode.EMPTY_IMAGE);
         }
-        String contentType = image.getContentType();
-        if (contentType == null || !SUPPORTED_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
+        if (!isSupportedType(image.getContentType())) {
             throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
         }
         if (!ImageInspector.isSupported(data)) {

@@ -199,19 +199,45 @@ class ExhibitionRepositoryTest {
         like(oldest, 11L);
         entityManager.flush();
 
-        List<Long> ids = exhibitionRepository.findRecentIds(PageRequest.of(0, 10));
+        List<Long> ids = exhibitionRepository.findRecentIds(null, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(newest.getId(), oldest.getId());
     }
 
     @Test
-    @DisplayName("검색 탭 피드 — limit 만큼만 가져온다")
+    @DisplayName("검색 탭 피드 — size 만큼만 가져온다")
     void 최신순_limit() {
         exhibition(1L, "A");
         Exhibition newest = exhibition(2L, "B");
         entityManager.flush();
 
-        assertThat(exhibitionRepository.findRecentIds(PageRequest.of(0, 1))).containsExactly(newest.getId());
+        assertThat(exhibitionRepository.findRecentIds(null, PageRequest.of(0, 1)))
+                .containsExactly(newest.getId());
+    }
+
+    @Test
+    @DisplayName("검색 탭 피드 더보기 — 커서보다 오래된 것만 가져온다")
+    void 최신순_커서() {
+        Exhibition oldest = exhibition(1L, "A");
+        Exhibition middle = exhibition(2L, "B");
+        exhibition(3L, "C");
+        entityManager.flush();
+
+        List<Long> ids = exhibitionRepository.findRecentIds(middle.getId() + 1, PageRequest.of(0, 10));
+
+        assertThat(ids).containsExactly(middle.getId(), oldest.getId());
+    }
+
+    @Test
+    @DisplayName("검색 탭 피드 — cursor 가 null 이면 첫 페이지 전체를 가져온다")
+    void 최신순_커서_null이면_첫페이지() {
+        Exhibition oldest = exhibition(1L, "A");
+        Exhibition newest = exhibition(2L, "B");
+        entityManager.flush();
+
+        List<Long> ids = exhibitionRepository.findRecentIds(null, PageRequest.of(0, 10));
+
+        assertThat(ids).containsExactly(newest.getId(), oldest.getId());
     }
 
     @Test
@@ -293,5 +319,45 @@ class ExhibitionRepositoryTest {
 
         assertThat(ownerView).as("주인은 처리 중인 것도 봐야 조치할 수 있습니다").hasSize(2);
         assertThat(guestView).as("남에게는 완료된 것만 보입니다").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("내 장식장 목록은 커서로 51번째 이후에도 닿는다")
+    void 내_장식장_커서_더보기() {
+        // 상한(50)만 있고 커서가 없으면, 자기 장식장인데도 그 뒤로는 볼 방법이 없었습니다.
+        Exhibition first = exhibition(1L, "1번");
+        Exhibition second = exhibition(1L, "2번");
+        Exhibition third = exhibition(1L, "3번");
+        exhibition(2L, "남의 것");
+        entityManager.flush();
+
+        List<Long> page1 = exhibitionRepository.findIdsByUserId(1L, PageRequest.of(0, 2));
+        assertThat(page1).containsExactly(first.getId(), second.getId());
+
+        List<Long> page2 = exhibitionRepository.findIdsByUserIdAfter(1L, page1.get(1), PageRequest.of(0, 2));
+        assertThat(page2)
+                .as("커서 뒤엣것만, 남의 장식장은 섞이지 않아야 합니다")
+                .containsExactly(third.getId());
+    }
+
+    @Test
+    @DisplayName("장식장의 좋아요를 벌크 쿼리 한 번으로 지운다")
+    void 좋아요_일괄_삭제() {
+        // 파생 deleteBy... 는 행을 전부 SELECT 해서 영속성 컨텍스트에 올린 뒤 한 건씩
+        // 지웁니다. 좋아요가 많은 장식장을 지우면 그만큼 DELETE 가 나갑니다.
+        Exhibition target = exhibition(1L, "지울 장식장");
+        Exhibition other = exhibition(2L, "남을 장식장");
+        entityManager.persist(new ExhibitionLike(target, 10L));
+        entityManager.persist(new ExhibitionLike(target, 11L));
+        entityManager.persist(new ExhibitionLike(other, 10L));
+        entityManager.flush();
+
+        exhibitionLikeRepository.deleteByExhibitionId(target.getId());
+        entityManager.clear();   // 벌크 쿼리는 영속성 컨텍스트를 건너뛰므로 다시 읽습니다.
+
+        assertThat(exhibitionLikeRepository.countByExhibitionId(target.getId())).isZero();
+        assertThat(exhibitionLikeRepository.countByExhibitionId(other.getId()))
+                .as("다른 장식장의 좋아요는 그대로여야 합니다")
+                .isEqualTo(1);
     }
 }

@@ -8,6 +8,7 @@ import com.duckspace.domain.exhibition.dto.request.UploadItemRequest;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionItemResponse;
+import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryPageResponse;
 import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryResponse;
 import com.duckspace.domain.exhibition.service.ExhibitionItemService;
 import com.duckspace.domain.exhibition.service.ExhibitionLikeService;
@@ -53,13 +54,16 @@ public class ExhibitionController {
 
     @Operation(summary = "장식장 피드",
             description = """
-                    검색 탭 기본 화면용 — 필터 없이 최신 등록순으로 전체 장식장을 돌려줍니다. limit 기본 10, 최대 50.
+                    검색 탭 기본 화면용 — 필터 없이 최신 등록순 커서 페이징입니다.
+                    cursor 를 안 보내면 첫 페이지, size 기본 10·최대 50입니다.
+                    응답의 nextCursor 를 다음 요청의 cursor 로 넣으세요.
                     **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
                     """)
     @GetMapping
-    public ApiResponse<List<ExhibitionSummaryResponse>> recent(@AuthenticationPrincipal AuthUser authUser,
-                                                                 @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.getRecent(limit, viewerId(authUser)));
+    public ApiResponse<ExhibitionSummaryPageResponse> recent(@AuthenticationPrincipal AuthUser authUser,
+                                                               @RequestParam(required = false) Long cursor,
+                                                               @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(exhibitionService.getRecent(cursor, size, AuthUser.idOrNull(authUser)));
     }
 
     @Operation(summary = "인기 전시장",
@@ -70,19 +74,22 @@ public class ExhibitionController {
     @GetMapping("/popular")
     public ApiResponse<List<ExhibitionSummaryResponse>> popular(@AuthenticationPrincipal AuthUser authUser,
                                                                  @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.getPopular(limit, viewerId(authUser)));
+        return ApiResponse.success(exhibitionService.getPopular(limit, AuthUser.idOrNull(authUser)));
     }
 
     @Operation(summary = "내 장식장 목록",
             description = """
                     마이페이지용. 만든 순서대로(오래된 것부터) 돌려줍니다. limit 기본 20, 최대 50.
                     응답 형태는 인기 전시장·검색과 같습니다.
+                    장식장이 limit 보다 많으면 **마지막 항목의 exhibitionId 를 cursor 로 넣어** 다음 장을
+                    받으세요. cursor 를 안 보내면 예전과 동일하게 처음부터 돌려줍니다.
                     """)
     @GetMapping("/me")
     public ApiResponse<List<ExhibitionSummaryResponse>> myExhibitions(
             @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(required = false) Long cursor,
             @RequestParam(required = false) Integer limit) {
-        return ApiResponse.success(exhibitionService.getMine(authUser.getUserId(), limit));
+        return ApiResponse.success(exhibitionService.getMine(authUser.getUserId(), cursor, limit));
     }
 
     @Operation(summary = "유저의 대표 장식장",
@@ -95,7 +102,7 @@ public class ExhibitionController {
     @GetMapping("/users/{userId:[0-9]+}/primary")
     public ApiResponse<ExhibitionSummaryResponse> primary(@AuthenticationPrincipal AuthUser authUser,
                                                             @PathVariable Long userId) {
-        return ApiResponse.success(exhibitionService.getPrimary(userId, viewerId(authUser)));
+        return ApiResponse.success(exhibitionService.getPrimary(userId, AuthUser.idOrNull(authUser)));
     }
 
     @Operation(summary = "장식장 상세",
@@ -111,7 +118,7 @@ public class ExhibitionController {
     @GetMapping("/{exhibitionId:[0-9]+}")
     public ApiResponse<ExhibitionDetailResponse> detail(@AuthenticationPrincipal AuthUser authUser,
                                                          @PathVariable Long exhibitionId) {
-        return ApiResponse.success(exhibitionService.getDetail(exhibitionId, viewerId(authUser)));
+        return ApiResponse.success(exhibitionService.getDetail(exhibitionId, AuthUser.idOrNull(authUser)));
     }
 
     /**
@@ -122,10 +129,6 @@ public class ExhibitionController {
      * {@code AuthUser} 로 캐스팅되지 못하고 null 이 들어옵니다.
      * 서비스단은 {@code viewerId == null} 을 "남의 장식장을 보는 사람" 으로 처리합니다.
      */
-    private static Long viewerId(AuthUser authUser) {
-        return authUser == null ? null : authUser.getUserId();
-    }
-
     @Operation(summary = "장식장 이름 수정", description = "본인 장식장만 수정할 수 있습니다.")
     @PatchMapping("/{exhibitionId}")
     public ApiResponse<ExhibitionDetailResponse> rename(@AuthenticationPrincipal AuthUser authUser,
@@ -184,7 +187,7 @@ public class ExhibitionController {
                                                         @PathVariable Long exhibitionId,
                                                         @PathVariable Long itemId) {
         return ApiResponse.success(
-                exhibitionItemService.get(exhibitionId, itemId, viewerId(authUser)));
+                exhibitionItemService.get(exhibitionId, itemId, AuthUser.idOrNull(authUser)));
     }
 
     @Operation(summary = "실패한 굿즈 다시 처리",
@@ -224,14 +227,19 @@ public class ExhibitionController {
             description = """
                     최신순 더보기 페이징입니다. 응답의 nextCursor 를 다음 요청의 cursor 로 넣으세요.
                     본인 장식장이면 처리 중(PENDING)·실패(FAILED)한 굿즈도 함께 나옵니다.
+                    **지금은 토큰이 필요합니다** — 상세({@code GET /{id}})는 공개인데 이 그리드만
+                    인증을 요구해서, 비로그인 사용자는 상세는 보면서 "더보기" 에서 401 을 받습니다.
+                    공개로 열지는 아직 정하지 않았습니다.
                     """)
     @GetMapping("/{exhibitionId}/items")
     public ApiResponse<ExhibitionItemPageResponse> listItems(@AuthenticationPrincipal AuthUser authUser,
                                                               @PathVariable Long exhibitionId,
                                                               @RequestParam(required = false) Long cursor,
                                                               @RequestParam(required = false) Integer size) {
+        // 다른 조회와 같은 규칙을 씁니다. 지금은 이 경로가 인증 필수라 null 이 올 수 없지만,
+        // 공개 목록에 추가되는 순간 getUserId() 는 그 자리에서 NPE 입니다.
         return ApiResponse.success(
-                exhibitionItemService.list(exhibitionId, authUser.getUserId(), cursor, size));
+                exhibitionItemService.list(exhibitionId, AuthUser.idOrNull(authUser), cursor, size));
     }
 
     @Operation(summary = "전시된 굿즈 삭제")
