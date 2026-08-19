@@ -85,6 +85,19 @@ public class ExhibitionController {
         return ApiResponse.success(exhibitionService.getMine(authUser.getUserId(), limit));
     }
 
+    @Operation(summary = "유저의 대표 장식장",
+            description = """
+                    프로필 화면에서 "이 사람의 장식장" 버튼으로 이동할 때 씁니다.
+                    장식장을 여러 개 가질 수 있어, 가장 먼저 만든(id가 가장 작은) 장식장을 대표로 돌려줍니다.
+                    장식장이 하나도 없는 유저면 404(EXHIBITION_NOT_FOUND)입니다.
+                    **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 false 입니다.
+                    """)
+    @GetMapping("/users/{userId:[0-9]+}/primary")
+    public ApiResponse<ExhibitionSummaryResponse> primary(@AuthenticationPrincipal AuthUser authUser,
+                                                            @PathVariable Long userId) {
+        return ApiResponse.success(exhibitionService.getPrimary(userId, viewerId(authUser)));
+    }
+
     @Operation(summary = "장식장 상세",
             description = """
                     배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height/rotation 으로 그리면 됩니다.

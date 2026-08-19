@@ -1,6 +1,7 @@
 package com.duckspace.domain.exhibition.controller;
 
 import com.duckspace.domain.exhibition.dto.response.ExhibitionDetailResponse;
+import com.duckspace.domain.exhibition.dto.response.ExhibitionSummaryResponse;
 import com.duckspace.domain.exhibition.service.ExhibitionItemService;
 import com.duckspace.domain.exhibition.service.ExhibitionLikeService;
 import com.duckspace.domain.exhibition.service.ExhibitionService;
@@ -61,6 +62,10 @@ class ExhibitionControllerSecurityTest {
                 3L, "내 장식장", "BASIC", 1L, false, 0, false, LocalDateTime.now(), List.of());
     }
 
+    private ExhibitionSummaryResponse summary() {
+        return new ExhibitionSummaryResponse(3L, "내 장식장", "BASIC", 1L, null, 0, false);
+    }
+
     // ------------------------------------------------------------------
     // 열려 있어야 하는 것
     // ------------------------------------------------------------------
@@ -80,6 +85,15 @@ class ExhibitionControllerSecurityTest {
         given(exhibitionService.getRecent(any(), isNull())).willReturn(List.of());
 
         mockMvc.perform(get("/api/exhibitions"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("비로그인도 유저의 대표 장식장을 볼 수 있다")
+    void 대표_장식장은_공개() throws Exception {
+        given(exhibitionService.getPrimary(eq(1L), isNull())).willReturn(summary());
+
+        mockMvc.perform(get("/api/exhibitions/users/1/primary"))
                 .andExpect(status().isOk());
     }
 

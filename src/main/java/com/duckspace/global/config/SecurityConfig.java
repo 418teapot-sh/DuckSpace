@@ -61,6 +61,8 @@ public class SecurityConfig {
             "/api/exhibitions",
             "/api/exhibitions/popular",
             "/api/exhibitions/{exhibitionId:[0-9]+}",
+            // 프로필 화면에서 다른 유저의 대표 장식장으로 이동할 때 씁니다(#65).
+            "/api/exhibitions/users/{userId:[0-9]+}/primary",
             "/api/search/exhibitions",
             // 찜(POST/DELETE .../like)과 위시리스트(.../likes)가 같은 /api/popups/** 아래 있어서
             // 조회(GET)만 여기로 열어둡니다. 통째로 열면 로그인 없이 찜을 누를 수 있게 됩니다.

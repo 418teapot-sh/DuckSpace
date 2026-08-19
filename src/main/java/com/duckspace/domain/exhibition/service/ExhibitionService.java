@@ -103,6 +103,21 @@ public class ExhibitionService {
         return toSummaries(ids, userId);
     }
 
+    /**
+     * 유저의 대표 장식장. 프로필 화면에서 "이 사람의 장식장" 버튼으로 이동할 때 씁니다.
+     *
+     * <p>유저가 장식장을 여러 개 가질 수 있어 "대표"가 모호하지만, 가장 먼저 만든(id가 가장
+     * 작은) 것을 대표로 취급하기로 했습니다(#65). 지금은 가입 시 자동 생성되는 기본 장식장
+     * 하나뿐이라 사실상 항상 그 하나가 나옵니다.
+     */
+    public ExhibitionSummaryResponse getPrimary(Long userId, Long viewerId) {
+        List<Long> ids = exhibitionRepository.findIdsByUserId(userId, PageRequest.of(0, 1));
+        if (ids.isEmpty()) {
+            throw new BusinessException(ExhibitionErrorCode.EXHIBITION_NOT_FOUND);
+        }
+        return toSummaries(ids, viewerId).get(0);
+    }
+
     /** 홈 화면 "인기 전시장". 좋아요가 많은 순입니다. */
     public List<ExhibitionSummaryResponse> getPopular(Integer limit, Long viewerId) {
         List<Long> ids = exhibitionRepository.findPopularIds(
