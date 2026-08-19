@@ -104,4 +104,17 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
             """)
     List<ExhibitionItem> findFirstItemOfEach(@Param("exhibitionIds") Collection<Long> exhibitionIds,
                                               @Param("status") ItemStatus status);
+
+    /**
+     * 목록 카드 미리보기용 — 장식장별 배치된 굿즈 <b>전체</b>를 한 번에 가져옵니다
+     * (장식장마다 따로 조회하면 N+1). {@code exhibition.id asc, id asc} 순으로 반환해서
+     * 상세 화면과 같은 순서로 그릴 수 있습니다.
+     */
+    @Query("""
+            select i from ExhibitionItem i
+            where i.exhibition.id in :exhibitionIds and i.status = :status
+            order by i.exhibition.id asc, i.id asc
+            """)
+    List<ExhibitionItem> findAllByExhibitionIdsAndStatus(@Param("exhibitionIds") Collection<Long> exhibitionIds,
+                                                          @Param("status") ItemStatus status);
 }
