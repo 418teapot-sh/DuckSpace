@@ -269,6 +269,23 @@ class ExhibitionImageProcessorTest {
     }
 
     @Test
+    @DisplayName("거절된 업로드를 FAILED 로 기록하지 못해도 예외가 밖으로 새지 않는다")
+    void 거절_처리_중_기록_실패는_삼킨다() {
+        // 이 경로는 AFTER_COMMIT 리스너 안입니다. 예외가 나가면 commit() 을 거쳐
+        // 컨트롤러까지 전파돼서, 행은 이미 커밋됐는데 응답만 500 이 됩니다.
+        // 큐가 찬 순간은 커넥션 풀도 빡빡한 순간이라 실제로 일어날 수 있습니다.
+        directExecutor = task -> {
+            throw new RejectedExecutionException("queue full");
+        };
+        org.mockito.BDDMockito.willThrow(new RuntimeException("커넥션을 못 얻었습니다"))
+                .given(statusWriter).markFailed(anyLong(), any());
+
+        handle();   // 예외가 나가면 이 줄에서 테스트가 깨집니다
+
+        verify(statusWriter).markFailed(eq(ITEM_ID), isNull());
+    }
+
+    @Test
     @DisplayName("상태 기록이 실패하면 방금 올린 처리본을 회수한다")
     void 상태_기록_실패하면_고아_객체를_남기지_않는다() {
         given(removeBgClient.isEnabled()).willReturn(false);
@@ -280,7 +297,10 @@ class ExhibitionImageProcessorTest {
         handle();
 
         // 회수하지 않으면 DB 어디에도 주소가 없는 객체가 영원히 남습니다.
-        verify(imageCleanup).deleteOrphan("https://cdn/result.png");
+        // 다만 참조 확인을 건너뛰는 deleteOrphan 이 아니라 가드가 있는 delete 여야 합니다 —
+        // 예외가 commit() 에서 났다면 행은 이미 READY 로 이 URL 을 가리키고 있을 수 있습니다.
+        verify(imageCleanup).delete("https://cdn/result.png");
+        verify(imageCleanup, never()).deleteOrphan("https://cdn/result.png");
     }
 
     @Test

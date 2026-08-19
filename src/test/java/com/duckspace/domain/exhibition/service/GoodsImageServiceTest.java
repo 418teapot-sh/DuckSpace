@@ -204,7 +204,7 @@ class GoodsImageServiceTest {
         @Test
         void 장식장에_배치된_사진은_삭제를_거부한다() {
             // 여기서 파일을 지우면 배치된 굿즈의 그림이 통째로 깨집니다.
-            given(goodsImageRepository.findById(IMAGE_ID))
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME))
                     .willReturn(Optional.of(image(ItemStatus.READY, "https://cdn/a.png")));
             given(exhibitionItemRepository.existsByImageUrl("https://cdn/a.png")).willReturn(true);
 
@@ -218,7 +218,7 @@ class GoodsImageServiceTest {
         @Test
         void 배치되지_않은_사진은_파일까지_지운다() {
             GoodsImage target = image(ItemStatus.READY, "https://cdn/a.png");
-            given(goodsImageRepository.findById(IMAGE_ID)).willReturn(Optional.of(target));
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME)).willReturn(Optional.of(target));
             given(exhibitionItemRepository.existsByImageUrl("https://cdn/a.png")).willReturn(false);
 
             goodsImageService.delete(IMAGE_ID, ME);
@@ -228,11 +228,23 @@ class GoodsImageServiceTest {
         }
 
         @Test
+        void 잠그고_읽는다() {
+            // 잠그지 않으면 같은 사진에 삭제가 두 번 들어왔을 때 둘 다 통과하고,
+            // 뒤에 온 쪽이 이미 없는 행을 지우려다 500 이 됩니다. retry() 와 같은 이유입니다.
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME))
+                    .willReturn(Optional.of(image(ItemStatus.READY, "https://cdn/a.png")));
+
+            goodsImageService.delete(IMAGE_ID, ME);
+
+            verify(goodsImageRepository, never()).findById(any());
+        }
+
+        @Test
         void 처리_중_삭제는_행만_지운다() {
             // PENDING 이라 아직 파일이 없습니다. 처리가 뒤늦게 끝나도 상태 기록이
             // no-op 이 되면서 처리본은 파이프라인이 알아서 회수합니다.
             GoodsImage pending = image(ItemStatus.PENDING, null);
-            given(goodsImageRepository.findById(IMAGE_ID)).willReturn(Optional.of(pending));
+            given(goodsImageRepository.findOwnedForUpdate(IMAGE_ID, ME)).willReturn(Optional.of(pending));
 
             goodsImageService.delete(IMAGE_ID, ME);
 

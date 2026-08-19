@@ -176,7 +176,17 @@ public class ExhibitionImageProcessor {
             // 큐까지 가득 찼습니다. 요청 스레드에서 대신 처리하면 "즉시 응답" 약속이 깨지므로,
             // 실패로 정리하고 사용자가 다시 시도하게 합니다.
             log.error("이미지 처리 큐가 가득 찼습니다. id={}", logId, e);
-            recorder.failed(fallbackUrl);
+
+            // 이 메서드는 AFTER_COMMIT 리스너 안에서 돕니다. 여기서 예외가 밖으로 나가면
+            // commit() 을 거쳐 컨트롤러까지 전파돼서, 행은 이미 커밋돼 화면에 PENDING 으로
+            // 보이는데 응답만 500 이 됩니다. 큐가 찬 순간은 커넥션 풀도 빡빡한 순간이라
+            // 이 기록이 실패할 가능성이 실제로 있습니다. 큐가 찼다는 사실은 위 로그에
+            // 남으므로, 기록 실패는 로그만 남기고 삼킵니다.
+            try {
+                recorder.failed(fallbackUrl);
+            } catch (Exception recordingFailure) {
+                log.error("거절된 업로드를 FAILED 로 기록하지도 못했습니다. id={}", logId, recordingFailure);
+            }
         }
     }
 
@@ -219,10 +229,15 @@ public class ExhibitionImageProcessor {
             try {
                 written = recorder.ready(url);
             } catch (Exception e) {
-                // 기록에 실패해 방금 올린 처리본을 아무도 가리키지 않게 됐습니다.
-                // 여기서 회수하지 않으면 DB 어디에도 주소가 없는 고아 객체로 영원히 남습니다.
-                // (이 URL 은 방금 만든 것이라 참조 확인이 불필요합니다 — deleteOrphan)
-                imageCleanup.deleteOrphan(url);
+                // 기록에 실패해 방금 올린 처리본을 아무도 가리키지 않게 됐을 <b>가능성이</b> 큽니다.
+                // 회수하지 않으면 DB 어디에도 주소가 없는 고아 객체로 남습니다.
+                //
+                // 다만 여기서는 deleteOrphan(참조 확인 생략)을 쓰면 안 됩니다. 예외가 commit()
+                // 자체에서 날 수 있기 때문입니다 — MySQL 은 커밋했는데 응답 전에 커넥션이
+                // 끊기면, 행은 READY 로 이 url 을 가리키는 상태인데 예외만 올라옵니다.
+                // 그때 확인 없이 지우면 READY 인 채 이미지가 깨지고, 재시도는 FAILED 만
+                // 받으므로 복구도 안 됩니다. 인덱스 조회 한 번으로 그 경우를 거릅니다.
+                imageCleanup.delete(url);
                 throw e;
             }
             if (!written) {
