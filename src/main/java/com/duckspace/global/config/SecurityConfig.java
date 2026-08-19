@@ -37,8 +37,6 @@ public class SecurityConfig {
             "/api/auth/**",
             "/api/home",
             "/api/banners",
-            "/api/popups",
-            "/api/popups/**",
             "/actuator/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -62,6 +60,10 @@ public class SecurityConfig {
             "/api/exhibitions/popular",
             "/api/exhibitions/{exhibitionId:[0-9]+}",
             "/api/search/exhibitions",
+            // 찜(POST/DELETE .../like)과 위시리스트(.../likes)가 같은 /api/popups/** 아래 있어서
+            // 조회(GET)만 여기로 열어둡니다. 통째로 열면 로그인 없이 찜을 누를 수 있게 됩니다.
+            "/api/popups",
+            "/api/popups/{popupId:[0-9]+}",
     };
 
     @Bean

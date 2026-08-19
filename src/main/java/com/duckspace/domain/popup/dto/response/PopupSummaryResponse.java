@@ -12,16 +12,23 @@ public record PopupSummaryResponse(
         String imageUrl,
         LocalDate startDate,
         LocalDate endDate,
-        PopupStatus status
+        PopupStatus status,
+        boolean liked
 ) {
-    public static PopupSummaryResponse from(Popup popup) {
+    public static PopupSummaryResponse from(Popup popup, boolean liked) {
         return new PopupSummaryResponse(
                 popup.getId(),
                 popup.getTitle(),
                 popup.getImageUrl(),
                 popup.getStartDate(),
                 popup.getEndDate(),
-                popup.getStatus()
+                popup.getStatus(),
+                liked
         );
+    }
+
+    /** viewer 개념이 없는 경로(관리자 목록 등)용 — "안 좋아함"이 아니라 "이 응답엔 찜 여부가 의미 없음"입니다. */
+    public static PopupSummaryResponse from(Popup popup) {
+        return from(popup, false);
     }
 }

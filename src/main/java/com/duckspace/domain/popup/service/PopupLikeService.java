@@ -1,0 +1,56 @@
+package com.duckspace.domain.popup.service;
+
+import com.duckspace.domain.popup.dto.response.PopupSummaryResponse;
+import com.duckspace.domain.popup.entity.PopupLike;
+import com.duckspace.domain.popup.exception.PopupErrorCode;
+import com.duckspace.domain.popup.repository.PopupLikeRepository;
+import com.duckspace.global.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class PopupLikeService {
+
+    private final PopupLikeRepository popupLikeRepository;
+    private final PopupLikeWriter popupLikeWriter;
+    private final PopupService popupService;
+
+    /**
+     * 찜 등록. 더블클릭 등으로 두 요청이 동시에 들어와도 유니크 제약으로 하나만 남습니다.
+     *
+     * <p>존재 확인과 insert 사이에 팝업이 삭제되는 경우(TOCTOU)는 FK 제약으로 걸러서
+     * 유니크 위반과 구분합니다.
+     */
+    @Transactional
+    public void like(Long userId, Long popupId) {
+        popupService.getPopupOrThrow(popupId);
+        try {
+            popupLikeWriter.insert(popupId, userId);
+        } catch (DataIntegrityViolationException e) {
+            if (popupLikeRepository.existsByPopupIdAndUserId(popupId, userId)) {
+                throw new BusinessException(PopupErrorCode.ALREADY_LIKED);
+            }
+            throw new BusinessException(PopupErrorCode.POPUP_NOT_FOUND);
+        }
+    }
+
+    /** 찜 취소. 이미 취소된 상태여도 에러 없이 넘어갑니다(멱등). */
+    @Transactional
+    public void unlike(Long userId, Long popupId) {
+        popupLikeRepository.findByPopupIdAndUserId(popupId, userId)
+                .ifPresent(popupLikeRepository::delete);
+    }
+
+    /** 내가 찜한 팝업 목록 — 최근 찜한 순. */
+    public List<PopupSummaryResponse> getLikedPopups(Long userId) {
+        return popupLikeRepository.findLikedPopups(userId).stream()
+                .map(popup -> PopupSummaryResponse.from(popup, true))
+                .toList();
+    }
+}

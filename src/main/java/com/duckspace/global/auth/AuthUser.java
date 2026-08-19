@@ -24,6 +24,11 @@ public record AuthUser(Long userId, Role role) implements UserDetails {
         return userId;
     }
 
+    /** 공개 GET처럼 비로그인도 허용하는 엔드포인트에서, {@code authUser}가 null일 수 있을 때 씁니다. */
+    public static Long idOrNull(AuthUser authUser) {
+        return authUser == null ? null : authUser.getUserId();
+    }
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
