@@ -22,7 +22,7 @@ public class HomeService {
     public HomeResponse getHome(Long viewerId) {
         return new HomeResponse(
                 bannerService.getActiveBanners().banners(),
-                popupService.getUpcomingPopups(),
+                popupService.getUpcomingPopups(viewerId),
                 exhibitionService.getPopular(POPULAR_EXHIBITION_LIMIT, viewerId)
         );
     }

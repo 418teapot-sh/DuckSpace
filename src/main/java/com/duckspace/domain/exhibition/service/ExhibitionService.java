@@ -110,6 +110,13 @@ public class ExhibitionService {
         return toSummaries(ids, viewerId);
     }
 
+    /** 검색 탭 기본 화면의 장식장 피드. 필터 없이 최신 등록순입니다. */
+    public List<ExhibitionSummaryResponse> getRecent(Integer limit, Long viewerId) {
+        List<Long> ids = exhibitionRepository.findRecentIds(
+                PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
+        return toSummaries(ids, viewerId);
+    }
+
     /**
      * 전시 검색. 굿즈 이름이 걸리면 그 굿즈가 놓인 장식장을 결과로 돌려줍니다.
      *

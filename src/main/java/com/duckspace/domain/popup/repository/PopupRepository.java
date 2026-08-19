@@ -10,5 +10,6 @@ public interface PopupRepository extends JpaRepository<Popup, Long> {
 
     List<Popup> findAllByOrderByStartDateAsc();
 
+    /** 홈 화면 "다가오는 팝업" 섹션용 — 종료된 팝업은 제외합니다. */
     List<Popup> findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate today);
 }

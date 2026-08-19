@@ -1,5 +1,7 @@
 package com.duckspace.domain.popup.entity;
 
+import com.duckspace.global.support.ServiceZone;
+
 import java.time.LocalDate;
 
 public enum PopupStatus {
@@ -8,7 +10,7 @@ public enum PopupStatus {
     ENDED;
 
     public static PopupStatus of(LocalDate startDate, LocalDate endDate) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(ServiceZone.ZONE);
         if (today.isBefore(startDate)) {
             return UPCOMING;
         }

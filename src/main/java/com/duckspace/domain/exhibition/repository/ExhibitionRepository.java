@@ -41,6 +41,13 @@ public interface ExhibitionRepository extends JpaRepository<Exhibition, Long> {
     List<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);
 
     /**
+     * 검색 탭 기본 화면의 장식장 피드용 — 필터 없이 등록된 순서(최신순)로 전체 장식장 id를 가져옵니다.
+     * {@link #findPopularIds}와 달리 좋아요 수로 정렬하지 않습니다.
+     */
+    @Query("select e.id from Exhibition e order by e.id desc")
+    List<Long> findRecentIds(Pageable pageable);
+
+    /**
      * 굿즈 이름으로 장식장을 찾습니다. 매칭된 굿즈가 놓인 장식장을 결과로 돌려줍니다.
      *
      * <p>{@code escape '\\'} 는 사용자가 입력한 {@code %} · {@code _} 가 와일드카드로 동작하지

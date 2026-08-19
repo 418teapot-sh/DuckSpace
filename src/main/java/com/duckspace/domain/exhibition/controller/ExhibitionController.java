@@ -51,6 +51,17 @@ public class ExhibitionController {
         return ApiResponse.success(exhibitionService.create(authUser.getUserId(), request));
     }
 
+    @Operation(summary = "장식장 피드",
+            description = """
+                    검색 탭 기본 화면용 — 필터 없이 최신 등록순으로 전체 장식장을 돌려줍니다. limit 기본 10, 최대 50.
+                    **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
+                    """)
+    @GetMapping
+    public ApiResponse<List<ExhibitionSummaryResponse>> recent(@AuthenticationPrincipal AuthUser authUser,
+                                                                 @RequestParam(required = false) Integer limit) {
+        return ApiResponse.success(exhibitionService.getRecent(limit, viewerId(authUser)));
+    }
+
     @Operation(summary = "인기 전시장",
             description = """
                     좋아요가 많은 순입니다. 홈 화면에서 사용합니다. limit 기본 10, 최대 50.
