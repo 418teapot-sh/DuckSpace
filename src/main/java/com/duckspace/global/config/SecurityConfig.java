@@ -6,6 +6,7 @@ import com.duckspace.global.auth.JwtAuthenticationFilter;
 import com.duckspace.global.auth.JwtProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -35,8 +36,6 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
-            "/api/home",
-            "/api/banners",
             "/actuator/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -64,6 +63,10 @@ public class SecurityConfig {
             // 프로필 화면에서 다른 유저의 대표 장식장으로 이동할 때 씁니다(#65).
             "/api/exhibitions/users/{userId:[0-9]+}/primary",
             "/api/search/exhibitions",
+            // 조회만 있는 화면이지만 메서드 무관 목록에 두면, 나중에 이 아래 변경 API 가
+            // 생겼을 때 조용히 무인증으로 열립니다(팝업이 #55 에서 그 직전까지 갔습니다).
+            "/api/home",
+            "/api/banners",
             // 검색 결과(GET)만 공개, 검색 내역(.../history)은 로그인 필요 — 팝업 찜과 같은 이유입니다.
             "/api/search/users",
             // 찜(POST/DELETE .../like)과 위시리스트(.../likes)가 같은 /api/popups/** 아래 있어서
@@ -71,6 +74,24 @@ public class SecurityConfig {
             "/api/popups",
             "/api/popups/{popupId:[0-9]+}",
     };
+
+    /**
+     * 서블릿 컨테이너 자동 등록을 끕니다.
+     *
+     * <p>Boot 는 {@code Filter} 빈을 보면 서블릿 필터로 자동 등록하는데, 아래
+     * {@code addFilterBefore} 가 같은 인스턴스를 시큐리티 체인에도 넣습니다.
+     * {@code OncePerRequestFilter} 의 중복 실행 방지 덕에 지금은 두 번 돌지 않지만,
+     * <b>사본이 시큐리티 체인 바깥에 존재하는 상태</b>라 누군가
+     * {@code securityMatcher} 나 두 번째 {@code SecurityFilterChain} 을 추가하면
+     * 그 경로에서는 보호가 사라집니다. 등록 위치를 시큐리티 체인 하나로 못박습니다.
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtAuthenticationFilterRegistration() {
+        FilterRegistrationBean<JwtAuthenticationFilter> registration =
+                new FilterRegistrationBean<>(jwtAuthenticationFilter);
+        registration.setEnabled(false);
+        return registration;
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {

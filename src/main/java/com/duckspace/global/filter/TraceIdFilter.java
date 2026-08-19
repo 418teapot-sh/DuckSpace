@@ -28,7 +28,10 @@ public class TraceIdFilter extends OncePerRequestFilter {
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                      @NonNull HttpServletResponse response,
                                      @NonNull FilterChain filterChain) throws ServletException, IOException {
-        String traceId = UUID.randomUUID().toString().substring(0, 8);
+        // 8자(32비트)면 생일 한계로 약 7.7만 요청에 중복 확률 50% 입니다. 팀원이 알려준
+        // traceId 로 로그를 grep 하면 무관한 요청이 섞여 나와서, 이 필터의 목적 자체가
+        // 깨집니다. 16자면 하루치 로그에서 사실상 안 겹칩니다.
+        String traceId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         MDC.put(TRACE_ID_KEY, traceId);
         response.setHeader(TRACE_ID_HEADER, traceId);
         try {

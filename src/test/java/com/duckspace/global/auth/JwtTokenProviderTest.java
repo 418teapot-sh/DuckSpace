@@ -4,6 +4,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.GrantedAuthority;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -73,6 +74,41 @@ class JwtTokenProviderTest {
         String token = tokenWithRole("MANAGER");
 
         assertThat(provider.getRole(token)).isEqualTo(Role.USER);
+    }
+
+    @Test
+    @DisplayName("액세스 토큰 하나로 인증 정보를 한 번에 만든다")
+    void 한_번만_파싱해서_인증정보를_만든다() {
+        // 예전에는 필터가 validate → isAccessToken → getUserId → getRole 을 차례로 불러서
+        // 인증된 요청마다 서명 검증이 네 번씩 돌았습니다.
+        String access = provider.createAccessToken(USER_ID, Role.ADMIN);
+
+        AuthUser authUser = provider.parseAccessUser(access).orElseThrow();
+
+        assertThat(authUser.getUserId()).isEqualTo(USER_ID);
+        assertThat(authUser.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactly("ROLE_ADMIN");
+    }
+
+    @Test
+    @DisplayName("리프레시 토큰으로는 인증되지 않는다")
+    void 리프레시_토큰은_인증에_못_쓴다() {
+        // 서명은 멀쩡하므로 타입을 안 보면 그대로 통과합니다. 리프레시 토큰에는 role 이 없어
+        // 전부 USER 로 인증되고, 재발급용 토큰이 사실상 무기한 액세스 토큰이 됩니다.
+        String refresh = provider.createRefreshToken(USER_ID);
+
+        assertThat(provider.parseAccessUser(refresh)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("서명이 다르거나 형식이 깨진 토큰은 예외 없이 비어 있다")
+    void 잘못된_토큰은_비어_있다() {
+        // 필터는 @RestControllerAdvice 바깥이라, 여기서 예외가 새면 500 HTML 이 나갑니다.
+        assertThat(provider.parseAccessUser("이건 토큰이 아닙니다")).isEmpty();
+        assertThat(provider.parseAccessUser(tokenWithRole("MANAGER")))
+                .as("모르는 role 은 USER 로 떨어질 뿐 인증 자체는 됩니다")
+                .isPresent();
     }
 
     @Test
