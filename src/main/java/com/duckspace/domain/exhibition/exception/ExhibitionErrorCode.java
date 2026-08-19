@@ -12,6 +12,8 @@ public enum ExhibitionErrorCode implements BaseErrorCode {
     ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "전시된 굿즈를 찾을 수 없습니다."),
     EMPTY_IMAGE(HttpStatus.BAD_REQUEST, "이미지 파일이 비어 있습니다."),
     UNSUPPORTED_IMAGE_TYPE(HttpStatus.BAD_REQUEST, "JPG 또는 PNG 이미지만 올릴 수 있습니다."),
+    IMAGE_DIMENSION_TOO_LARGE(HttpStatus.BAD_REQUEST,
+            "이미지 크기가 너무 큽니다. 4천만 화소 이하로 줄여서 올려주세요."),
     IMAGE_PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 처리에 실패했습니다."),
     ITEM_NOT_RETRYABLE(HttpStatus.CONFLICT, "처리에 실패한 굿즈만 다시 시도할 수 있습니다."),
     RETRY_SOURCE_MISSING(HttpStatus.CONFLICT, "다시 처리할 원본이 없습니다. 사진을 다시 올려주세요."),
