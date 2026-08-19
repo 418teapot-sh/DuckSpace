@@ -1,6 +1,5 @@
 package com.duckspace.domain.user.service;
 
-import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.domain.user.repository.UserSearchHistoryRepository;
 import com.duckspace.global.exception.BusinessException;
@@ -10,9 +9,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
-
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -21,7 +19,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,12 +49,8 @@ class UserSearchServiceTest {
     private UserSearchService userSearchService;
 
     private void 유저_둘_다_존재() {
-        User searcher = mock(User.class);
-        User target = mock(User.class);
-        given(userRepository.findAllById(List.of(SEARCHER_ID, TARGET_ID)))
-                .willReturn(List.of(searcher, target));
-        given(searcher.getId()).willReturn(SEARCHER_ID);
-        given(target.getId()).willReturn(TARGET_ID);
+        given(userRepository.existsById(SEARCHER_ID)).willReturn(true);
+        given(userRepository.existsById(TARGET_ID)).willReturn(true);
     }
 
     @Test
@@ -91,8 +84,7 @@ class UserSearchServiceTest {
         유저_둘_다_존재();
         willThrow(new DataIntegrityViolationException("duplicate key"))
                 .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
-        given(searchHistoryRepository.existsBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID))
-                .willReturn(true);
+        given(searchHistoryWriter.exists(SEARCHER_ID, TARGET_ID)).willReturn(true);
 
         assertDoesNotThrow(() -> userSearchService.record(SEARCHER_ID, TARGET_ID));
     }
@@ -103,16 +95,40 @@ class UserSearchServiceTest {
         유저_둘_다_존재();
         willThrow(new DataIntegrityViolationException("foreign key constraint fails"))
                 .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
-        given(searchHistoryRepository.existsBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID))
-                .willReturn(false);
+        given(searchHistoryWriter.exists(SEARCHER_ID, TARGET_ID)).willReturn(false);
 
         assertThrows(BusinessException.class, () -> userSearchService.record(SEARCHER_ID, TARGET_ID));
     }
 
     @Test
+    @DisplayName("데드락 등 일시적인 DB 오류는 재시도해서 통과시킨다")
+    void 일시적_오류는_재시도후_성공() {
+        유저_둘_다_존재();
+        willThrow(new CannotAcquireLockException("deadlock"))
+                .willThrow(new CannotAcquireLockException("deadlock"))
+                .willDoNothing()
+                .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
+
+        assertDoesNotThrow(() -> userSearchService.record(SEARCHER_ID, TARGET_ID));
+
+        verify(searchHistoryWriter, times(3)).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
+    }
+
+    @Test
+    @DisplayName("일시적 오류가 재시도 한도를 넘기면 예외를 그대로 던진다")
+    void 재시도_한도_초과시_예외() {
+        유저_둘_다_존재();
+        willThrow(new CannotAcquireLockException("deadlock"))
+                .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
+
+        assertThrows(CannotAcquireLockException.class, () -> userSearchService.record(SEARCHER_ID, TARGET_ID));
+    }
+
+    @Test
     @DisplayName("존재하지 않는 유저를 대상으로 기록하면 USER_NOT_FOUND")
     void 없는_유저는_예외() {
-        given(userRepository.findAllById(List.of(SEARCHER_ID, TARGET_ID))).willReturn(List.of());
+        given(userRepository.existsById(SEARCHER_ID)).willReturn(true);
+        given(userRepository.existsById(TARGET_ID)).willReturn(false);
 
         assertThrows(BusinessException.class, () -> userSearchService.record(SEARCHER_ID, TARGET_ID));
 

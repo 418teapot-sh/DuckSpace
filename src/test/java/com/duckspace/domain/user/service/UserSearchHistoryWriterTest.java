@@ -10,13 +10,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 
-import java.util.Optional;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -36,44 +38,45 @@ class UserSearchHistoryWriterTest {
     @InjectMocks
     private UserSearchHistoryWriter writer;
 
-    @Test
-    @DisplayName("삭제 후 flush하고 나서 새로 저장한다")
-    void 삭제_flush_저장_순서() {
+    private void 참조_준비() {
         given(userRepository.getReferenceById(SEARCHER_ID)).willReturn(mock(User.class));
         given(userRepository.getReferenceById(TARGET_ID)).willReturn(mock(User.class));
-        given(searchHistoryRepository.countBySearcherId(SEARCHER_ID)).willReturn(1L);
+    }
+
+    @Test
+    @DisplayName("삭제하고 새로 저장한 뒤, 최신 N개만 남기고 나머지를 한 번에 지운다")
+    void 삭제_저장_트리밍_순서() {
+        참조_준비();
+        given(searchHistoryRepository.findIdsBySearcherIdOrderByIdDesc(eq(SEARCHER_ID), any(PageRequest.class)))
+                .willReturn(List.of(10L, 9L, 8L));
 
         writer.replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
 
         verify(searchHistoryRepository).deleteBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID);
-        verify(searchHistoryRepository).flush();
         verify(searchHistoryRepository).saveAndFlush(any(UserSearchHistory.class));
+        verify(searchHistoryRepository).deleteBySearcherIdAndIdNotIn(SEARCHER_ID, List.of(10L, 9L, 8L));
     }
 
     @Test
-    @DisplayName("최대 개수를 넘으면 기준 이하가 될 때까지 가장 오래된 것부터 지운다")
-    void 초과분_반복_삭제() {
-        given(userRepository.getReferenceById(SEARCHER_ID)).willReturn(mock(User.class));
-        given(userRepository.getReferenceById(TARGET_ID)).willReturn(mock(User.class));
-        given(searchHistoryRepository.countBySearcherId(SEARCHER_ID)).willReturn(5L, 4L, 3L);
-        given(searchHistoryRepository.findFirstBySearcherIdOrderByIdAsc(SEARCHER_ID))
-                .willReturn(Optional.of(mock(UserSearchHistory.class)));
+    @DisplayName("트리밍은 반복이 아니라 단일 벌크 삭제 한 번뿐이다 — 이전 while-루프의 무한루프 재발을 막는 회귀 테스트")
+    void 트리밍은_단일_호출이다() {
+        참조_준비();
+        given(searchHistoryRepository.findIdsBySearcherIdOrderByIdDesc(eq(SEARCHER_ID), any(PageRequest.class)))
+                .willReturn(List.of(1L));
 
         writer.replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
 
-        verify(searchHistoryRepository, times(2)).findFirstBySearcherIdOrderByIdAsc(SEARCHER_ID);
-        verify(searchHistoryRepository, times(2)).delete(any(UserSearchHistory.class));
+        verify(searchHistoryRepository, times(1))
+                .findIdsBySearcherIdOrderByIdDesc(eq(SEARCHER_ID), any(PageRequest.class));
+        verify(searchHistoryRepository, times(1))
+                .deleteBySearcherIdAndIdNotIn(eq(SEARCHER_ID), any());
     }
 
     @Test
-    @DisplayName("최대 개수 이하면 지우지 않는다")
-    void 이하면_삭제하지_않는다() {
-        given(userRepository.getReferenceById(SEARCHER_ID)).willReturn(mock(User.class));
-        given(userRepository.getReferenceById(TARGET_ID)).willReturn(mock(User.class));
-        given(searchHistoryRepository.countBySearcherId(SEARCHER_ID)).willReturn(2L);
+    @DisplayName("exists는 재확인용 조회를 그대로 위임한다")
+    void exists_재확인() {
+        given(searchHistoryRepository.existsBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID)).willReturn(true);
 
-        writer.replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
-
-        verify(searchHistoryRepository, never()).findFirstBySearcherIdOrderByIdAsc(SEARCHER_ID);
+        assertThat(writer.exists(SEARCHER_ID, TARGET_ID)).isTrue();
     }
 }

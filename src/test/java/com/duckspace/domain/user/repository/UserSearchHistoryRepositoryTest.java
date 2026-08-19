@@ -13,7 +13,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /**
  * 검색 내역(UserSearchHistory) 쿼리를 실제 MySQL로 확인합니다.
  * - findBySearcherIdOrderByIdDesc가 최근 클릭 순으로 나오는지 (fetch join으로 searchedUser도 채워지는지)
- * - 3개 초과 시 가장 오래된 항목을 골라내는 findFirstBySearcherIdOrderByIdAsc
+ * - 트리밍용 findIdsBySearcherIdOrderByIdDesc / deleteBySearcherIdAndIdNotIn 벌크 삭제
  * - 닉네임 검색(UserRepository.searchByNickname)이 대소문자 무시하고 부분일치하는지
  * - (searcher_id, searched_user_id) 유니크 제약이 실제로 DB에서 걸리는지
  */
@@ -81,20 +80,40 @@ class UserSearchHistoryRepositoryTest {
     }
 
     @Test
-    void findFirstBySearcherIdOrderByIdAsc는_가장_오래된_항목을_돌려준다() {
+    void findIdsBySearcherIdOrderByIdDesc는_최신순으로_id만_돌려준다() {
         User searcher = newUser("나");
-        User oldest = newUser("가장오래된항목");
-        User newest = newUser("가장최근항목");
-
-        searchHistoryRepository.save(UserSearchHistory.of(searcher, oldest));
-        searchHistoryRepository.save(UserSearchHistory.of(searcher, newest));
+        UserSearchHistory oldest = searchHistoryRepository.save(UserSearchHistory.of(searcher, newUser("A")));
+        UserSearchHistory newest = searchHistoryRepository.save(UserSearchHistory.of(searcher, newUser("B")));
         entityManager.flush();
         entityManager.clear();
 
-        Optional<UserSearchHistory> result = searchHistoryRepository.findFirstBySearcherIdOrderByIdAsc(searcher.getId());
+        List<Long> ids = searchHistoryRepository.findIdsBySearcherIdOrderByIdDesc(searcher.getId(), PageRequest.of(0, 10));
 
-        assertThat(result).isPresent();
-        assertThat(result.get().getSearchedUser().getNickname()).isEqualTo("가장오래된항목");
+        assertThat(ids).containsExactly(newest.getId(), oldest.getId());
+    }
+
+    @Test
+    void deleteBySearcherIdAndIdNotIn는_keepIds에_없는_것만_한번에_지운다() {
+        User searcher = newUser("나");
+        User other = newUser("다른유저");
+        UserSearchHistory keep = searchHistoryRepository.save(UserSearchHistory.of(searcher, newUser("남길것")));
+        UserSearchHistory trim1 = searchHistoryRepository.save(UserSearchHistory.of(searcher, newUser("밀려날것1")));
+        UserSearchHistory trim2 = searchHistoryRepository.save(UserSearchHistory.of(searcher, newUser("밀려날것2")));
+        UserSearchHistory othersRow = searchHistoryRepository.save(UserSearchHistory.of(other, newUser("남의것")));
+        entityManager.flush();
+        entityManager.clear();
+
+        searchHistoryRepository.deleteBySearcherIdAndIdNotIn(searcher.getId(), List.of(keep.getId()));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(searchHistoryRepository.countBySearcherId(searcher.getId())).isEqualTo(1);
+        assertThat(searchHistoryRepository.findById(keep.getId())).isPresent();
+        assertThat(searchHistoryRepository.findById(trim1.getId())).isEmpty();
+        assertThat(searchHistoryRepository.findById(trim2.getId())).isEmpty();
+        assertThat(searchHistoryRepository.findById(othersRow.getId()))
+                .as("다른 사람 내역은 keepIds와 무관하게 안 지워져야 합니다")
+                .isPresent();
     }
 
     @Test

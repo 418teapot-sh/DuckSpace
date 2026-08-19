@@ -1,7 +1,6 @@
 package com.duckspace.domain.user.service;
 
 import com.duckspace.domain.user.dto.response.UserSearchResponse;
-import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.exception.UserErrorCode;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.domain.user.repository.UserSearchHistoryRepository;
@@ -10,6 +9,7 @@ import com.duckspace.global.support.LikeEscaper;
 import com.duckspace.global.support.Paging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +24,8 @@ public class UserSearchService {
     private static final int DEFAULT_LIMIT = 10;
     private static final int MAX_LIMIT = 50;
     private static final int MAX_HISTORY_SIZE = 3;
+    private static final int MAX_ATTEMPTS = 5;
+    private static final long RETRY_BACKOFF_MILLIS = 20;
 
     private final UserRepository userRepository;
     private final UserSearchHistoryRepository searchHistoryRepository;
@@ -64,30 +66,58 @@ public class UserSearchService {
      *
      * <p>유니크 제약({@code uk_search_history_searcher_searched}) 위반과 FK 위반(존재 확인과
      * INSERT 사이에 searcher/target이 삭제됨)이 둘 다 같은 {@link DataIntegrityViolationException}
-     * 으로 올라오기 때문에, 잡은 뒤 재확인해서 구분합니다({@code PopupLikeService.like()}와 동일한
+     * 으로 올라오기 때문에, 잡은 뒤 재확인해서 구분합니다({@code FollowService.follow()}와 동일한
      * 이유·패턴). 이미 있으면 동시 요청이 먼저 넣은 것이므로 성공으로 보고, 없으면 진짜 실패이므로
      * 예외를 던집니다 — 여기서 구분 안 하고 무조건 무시하면, 탈퇴 같은 기능이 생겼을 때 저장은
      * 안 됐는데 204로 성공 응답하는 상황이 생깁니다.
+     *
+     * <p>재확인은 {@code searchHistoryRepository}가 아니라 {@link UserSearchHistoryWriter#exists}
+     * (REQUIRES_NEW)로 합니다. 이 메서드(record) 자체가 이미 트랜잭션 안이라, 여기서 바로 재조회하면
+     * MySQL REPEATABLE READ 스냅샷이 이 트랜잭션의 최초 조회(바로 위 {@code existsById}) 시점에
+     * 고정돼 있어서 방금 다른 트랜잭션이 커밋한 행을 못 보고 오탐(USER_NOT_FOUND)이 날 수 있습니다.
+     *
+     * <p>같은 searcher에 서로 다른 target으로 여러 요청이 동시에 들어오면(delete/insert/트리밍이
+     * 전부 같은 searcher의 행들을 건드리므로) MySQL이 <b>데드락으로 판단해 한쪽을 강제로
+     * 롤백</b>시킬 수 있습니다({@link TransientDataAccessException}, 예: 락 대기 데드락). 이건
+     * 버그가 아니라 InnoDB의 정상적인 데드락 해소 동작이고, 진 쪽이 살짝 쉬었다 재시도하면
+     * 대부분 통과합니다(먼저 커밋한 트랜잭션들이 락을 놓을 시간을 벌어줌) — 그래서
+     * {@value #MAX_ATTEMPTS}번까지, 매번 짧게 쉬면서 재시도합니다. 이 메서드(record) 자체의
+     * 바깥 트랜잭션은 아무것도 쓰지 않아서(전부 REQUIRES_NEW writer가 처리) 재시도 사이에
+     * 걸려 있는 락이 없습니다.
      */
     @Transactional
     public void record(Long searcherId, Long targetUserId) {
         if (searcherId.equals(targetUserId)) {
             return;
         }
-        List<Long> foundIds = userRepository.findAllById(List.of(searcherId, targetUserId)).stream()
-                .map(User::getId)
-                .toList();
-        if (foundIds.size() != 2) {
+        if (!userRepository.existsById(searcherId) || !userRepository.existsById(targetUserId)) {
             throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
         }
 
-        try {
-            searchHistoryWriter.replace(searcherId, targetUserId, MAX_HISTORY_SIZE);
-        } catch (DataIntegrityViolationException e) {
-            if (!searchHistoryRepository.existsBySearcherIdAndSearchedUserId(searcherId, targetUserId)) {
-                throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                searchHistoryWriter.replace(searcherId, targetUserId, MAX_HISTORY_SIZE);
+                return;
+            } catch (DataIntegrityViolationException e) {
+                if (!searchHistoryWriter.exists(searcherId, targetUserId)) {
+                    throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
+                }
+                // 동시 요청이 같은 조합을 먼저 넣은 경우 — 이미 원하는 상태이므로 무시합니다.
+                return;
+            } catch (TransientDataAccessException e) {
+                if (attempt == MAX_ATTEMPTS) {
+                    throw e;
+                }
+                sleepBeforeRetry(attempt);
             }
-            // 동시 요청이 같은 조합을 먼저 넣은 경우 — 이미 원하는 상태이므로 무시합니다.
+        }
+    }
+
+    private void sleepBeforeRetry(int attempt) {
+        try {
+            Thread.sleep(RETRY_BACKOFF_MILLIS * attempt);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
