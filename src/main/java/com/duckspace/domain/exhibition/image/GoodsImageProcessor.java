@@ -87,7 +87,12 @@ public final class GoodsImageProcessor {
      * <p>단계 순서와 각 단계의 근거는 클래스 주석을 참고하세요.
      */
     public static BufferedImage process(BufferedImage src, Options o) {
-        BufferedImage img = resizeToFit(toArgb(src), o.maxWorkingSize());
+        // 순서가 중요합니다 — toArgb 를 먼저 부르면 <b>원본 해상도 그대로</b> ARGB 사본을
+        // 하나 더 만들고 나서 줄이게 됩니다. 1번 단계를 "메모리 보호" 라고 적어놓고 정작
+        // 가장 큰 할당을 그 앞에서 하던 셈이었습니다(4천만 픽셀이면 사본만 160MB).
+        // resizeToFit 은 결과를 이미 TYPE_INT_ARGB 로 만들어서, 줄인 뒤의 toArgb 는
+        // 그대로 통과합니다. 줄일 필요가 없는 작은 이미지에서는 예전과 동작이 같습니다.
+        BufferedImage img = toArgb(resizeToFit(src, o.maxWorkingSize()));
 
         img = normalizeBrightness(img);
         if (o.saturationBoost() != 1.0f) {
