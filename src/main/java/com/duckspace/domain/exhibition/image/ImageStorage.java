@@ -40,4 +40,17 @@ public interface ImageStorage {
      * @throws java.io.UncheckedIOException 읽지 못한 경우
      */
     byte[] download(String imageUrl);
+
+    /**
+     * URL 에서 저장 키를 복원합니다. <b>우리가 만든 URL 이 아니면 {@code null}</b> 입니다.
+     *
+     * <p>확인해 주는 것은 "이 주소가 우리 저장소를 가리키는가" 까지입니다 —
+     * <b>누구 것인지는 알려주지 않습니다.</b> 키에 소유자가 들어 있는 규칙
+     * ({@code posts/{userId}/…}, {@code users/{userId}/…}, {@code images/{userId}/…})을
+     * 아는 쪽에서 접두사로 확인하세요.
+     *
+     * <p>클라이언트가 준 URL 로 무언가를 지우기 전에 반드시 거쳐야 합니다. 접두사 확인 없이
+     * 지우면 같은 버킷의 남의 파일을 지울 수 있습니다.
+     */
+    String keyOf(String imageUrl);
 }

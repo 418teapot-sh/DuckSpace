@@ -36,12 +36,22 @@ public class PostImageService {
 
         String format = ImageInspector.detectFormat(data)
                 .orElseThrow(() -> new BusinessException(PostErrorCode.UNSUPPORTED_IMAGE_TYPE));
-        String key = "posts/%d/%s.%s".formatted(userId, UUID.randomUUID(), format);
+        String key = keyPrefixOf(userId) + "%s.%s".formatted(UUID.randomUUID(), format);
 
         String imageUrl = imageStorage.upload(key, data, image.getContentType());
         // 이 시점엔 아직 어느 글에도 안 쓰였습니다. PostService가 실제로 글에 담을 때 이 표시를 지웁니다.
         pendingPostImageRepository.save(new PendingPostImage(userId, imageUrl));
         return imageUrl;
+    }
+
+    /**
+     * 이 사용자가 올린 게시글 이미지의 저장 키 접두사.
+     *
+     * <p>업로드가 이 규칙으로 키를 만들기 때문에, 반대로 <b>어떤 URL 이 이 사용자 것인지</b>를
+     * 판단할 때도 같은 규칙을 씁니다. 두 곳이 어긋나면 남의 파일을 지우게 되므로 한 곳에 둡니다.
+     */
+    static String keyPrefixOf(Long userId) {
+        return "posts/%d/".formatted(userId);
     }
 
     /** ExhibitionItemService.validateImage와 같은 이유로 Content-Type 헤더뿐 아니라 실제 바이트도 확인합니다. */
