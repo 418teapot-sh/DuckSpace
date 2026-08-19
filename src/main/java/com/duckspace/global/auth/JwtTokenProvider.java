@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -71,7 +72,43 @@ public class JwtTokenProvider {
      * role 배포 이전에 발급된 기존 액세스 토큰에는 claim 자체가 없을 수 있어 USER 로 폴백합니다.
      */
     public Role getRole(String token) {
-        String role = parseClaims(token).get(ROLE_CLAIM, String.class);
+        return roleOf(parseClaims(token));
+    }
+
+    /**
+     * 액세스 토큰을 <b>한 번만 파싱해서</b> 인증 정보를 만듭니다.
+     *
+     * <p>예전에는 필터가 {@code validate} → {@code isAccessToken} → {@code getUserId} →
+     * {@code getRole} 을 차례로 불러서, 인증된 요청마다 <b>HMAC 검증과 JSON 역직렬화가
+     * 네 번씩</b> 돌았습니다. 같은 문자열을 네 번 푸는 일이라 한 번으로 줄였습니다.
+     *
+     * <p>실패 이유는 여기서 로그로 남깁니다. 필터가 요청 경로까지 같이 찍던 것과 달리 여기엔
+     * 요청 정보가 없지만, {@code TraceIdFilter} 가 먼저 돌아 MDC 에 traceId 를 넣어두므로
+     * 같은 요청의 다른 로그와 이어집니다.
+     *
+     * @return 유효한 <b>액세스</b> 토큰이면 인증 정보, 아니면 비어 있음
+     */
+    public Optional<AuthUser> parseAccessUser(String token) {
+        Claims claims;
+        try {
+            claims = parseClaims(token);
+        } catch (ExpiredJwtException e) {
+            log.debug("만료된 토큰입니다.");
+            return Optional.empty();
+        } catch (JwtException | IllegalArgumentException e) {
+            log.debug("유효하지 않은 토큰입니다: {}", e.getMessage());
+            return Optional.empty();
+        }
+
+        if (!ACCESS_TOKEN.equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
+            log.warn("액세스 토큰이 아닌 토큰으로 인증을 시도했습니다.");
+            return Optional.empty();
+        }
+        return Optional.of(new AuthUser(Long.valueOf(claims.getSubject()), roleOf(claims)));
+    }
+
+    private Role roleOf(Claims claims) {
+        String role = claims.get(ROLE_CLAIM, String.class);
         if (role == null) {
             return Role.USER;
         }

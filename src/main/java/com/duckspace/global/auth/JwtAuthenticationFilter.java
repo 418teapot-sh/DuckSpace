@@ -37,22 +37,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 나갑니다. 프론트는 { success, data, error, traceId } 를 기대하는데 파싱 불가능한
         // HTML 을 받고, 401 로 복구 가능한 상황이 500 이 됩니다.
         //
-        // validate() 는 서명과 만료만 증명합니다. 그 뒤 claim 을 해석하는 getUserId(Long.valueOf)
-        // 와 getRole 은 값이 예상 밖이면 unchecked 예외를 던집니다.
+        // 서명 검증만으로는 부족합니다 — claim 을 해석하는 과정(subject 를 Long 으로, role 을
+        // enum 으로)에서 값이 예상 밖이면 unchecked 예외가 납니다. parseAccessUser 가 그 해석까지
+        // 포함해 한 번에 처리하고, 실패 이유는 그쪽에서 로그로 남깁니다.
         try {
-            if (token != null && jwtTokenProvider.validate(token)) {
-                if (jwtTokenProvider.isAccessToken(token)) {
-                    AuthUser authUser = new AuthUser(jwtTokenProvider.getUserId(token), jwtTokenProvider.getRole(token));
-
+            if (token != null) {
+                jwtTokenProvider.parseAccessUser(token).ifPresent(authUser -> {
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(authUser, null, authUser.getAuthorities());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
-                } else {
-                    log.warn("액세스 토큰이 아닌 토큰으로 인증을 시도했습니다: {} {}",
-                            request.getMethod(), request.getRequestURI());
-                }
+                });
             }
         } catch (RuntimeException e) {
             // 인증을 걸지 않고 통과시킵니다. 뒤의 JwtAuthenticationEntryPoint 가 정상적인
