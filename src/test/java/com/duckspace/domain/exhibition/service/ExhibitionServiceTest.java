@@ -220,12 +220,16 @@ class ExhibitionServiceTest {
         @Test
         void 내_장식장을_카드_형태로_돌려준다() {
             Exhibition e = exhibitionWithId(3L, OWNER, "내 장식장");
+            ExhibitionItem itemA = itemOf(e, "thumb.png");
+            ExhibitionItem itemB = itemOf(e, "second.png");
 
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
             given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of(itemOf(e, "thumb.png")));
+                    .willReturn(List.of(itemA));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of(itemA, itemB));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
 
@@ -233,6 +237,10 @@ class ExhibitionServiceTest {
 
             assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
             assertThat(result.get(0).thumbnailUrl()).isEqualTo("thumb.png");
+            assertThat(result.get(0).items())
+                    .as("카드 미리보기는 배치된 굿즈 전체를 그대로 담아야 합니다")
+                    .extracting(r -> r.imageUrl())
+                    .containsExactly("thumb.png", "second.png");
         }
 
         @Test
@@ -313,6 +321,29 @@ class ExhibitionServiceTest {
             assertThat(result.get(0).likedByMe()).isTrue();
             assertThat(result.get(1).thumbnailUrl()).isNull();
             assertThat(result.get(1).likedByMe()).isFalse();
+        }
+
+        @Test
+        @DisplayName("굿즈는 각 장식장 자기 것만 들어간다 — 다른 장식장 것과 안 섞인다")
+        void 굿즈는_장식장별로_섞이지_않는다() {
+            Exhibition first = exhibitionWithId(3L, 2L, "인기1위");
+            Exhibition second = exhibitionWithId(1L, 3L, "인기2위");
+            ExhibitionItem firstItem = itemOf(first, "first.png");
+            ExhibitionItem secondItem = itemOf(second, "second.png");
+
+            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
+            given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(first, second));
+            given(exhibitionItemRepository.findFirstItemOfEach(List.of(3L, 1L), ItemStatus.READY))
+                    .willReturn(List.of(firstItem, secondItem));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
+                    .willReturn(List.of(firstItem, secondItem));
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getPopular(10, OWNER);
+
+            assertThat(result.get(0).items()).extracting(r -> r.imageUrl()).containsExactly("first.png");
+            assertThat(result.get(1).items()).extracting(r -> r.imageUrl()).containsExactly("second.png");
         }
 
         @Test
