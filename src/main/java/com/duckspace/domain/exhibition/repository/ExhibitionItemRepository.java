@@ -91,21 +91,6 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
     List<String> findImageUrlsByExhibitionId(@Param("exhibitionId") Long exhibitionId);
 
     /**
-     * 장식장별 대표 이미지. 목록 카드에 쓸 첫 굿즈를 장식장마다 하나씩 한 번에 가져옵니다.
-     * 장식장마다 따로 조회하면 N+1 이 됩니다.
-     */
-    @Query("""
-            select i from ExhibitionItem i
-            where i.id in (
-                select min(i2.id) from ExhibitionItem i2
-                where i2.exhibition.id in :exhibitionIds and i2.status = :status
-                group by i2.exhibition.id
-            )
-            """)
-    List<ExhibitionItem> findFirstItemOfEach(@Param("exhibitionIds") Collection<Long> exhibitionIds,
-                                              @Param("status") ItemStatus status);
-
-    /**
      * 목록 카드 미리보기용 — 장식장별 배치된 굿즈 <b>전체</b>를 한 번에 가져옵니다
      * (장식장마다 따로 조회하면 N+1). {@code exhibition.id asc, id asc} 순으로 반환해서
      * 상세 화면과 같은 순서로 그릴 수 있습니다.
