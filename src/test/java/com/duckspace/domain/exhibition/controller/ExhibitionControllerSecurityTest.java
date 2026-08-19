@@ -63,7 +63,7 @@ class ExhibitionControllerSecurityTest {
     }
 
     private ExhibitionSummaryResponse summary() {
-        return new ExhibitionSummaryResponse(3L, "내 장식장", "BASIC", 1L, null, 0, false);
+        return new ExhibitionSummaryResponse(3L, "내 장식장", "BASIC", 1L, null, List.of(), 0, false);
     }
 
     // ------------------------------------------------------------------

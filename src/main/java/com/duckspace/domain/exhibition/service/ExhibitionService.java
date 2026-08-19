@@ -175,8 +175,12 @@ public class ExhibitionService {
     /**
      * id 목록을 카드 응답으로 채웁니다.
      *
-     * <p>장식장마다 대표 이미지·좋아요 수·내 좋아요 여부를 따로 조회하면 N+1 이 되므로
-     * <b>각각 쿼리 한 번</b>으로 모아서 가져옵니다. (엔티티 조회까지 총 4쿼리)
+     * <p>장식장마다 대표 이미지·굿즈 전체·좋아요 수·내 좋아요 여부를 따로 조회하면 N+1 이 되므로
+     * <b>각각 쿼리 한 번</b>으로 모아서 가져옵니다. (엔티티 조회까지 총 5쿼리)
+     *
+     * <p>{@code items} 는 카드 미리보기에 배경 위 굿즈 배치를 그대로 그리기 위한 것입니다(#75).
+     * {@code thumbnails} 와 별도 쿼리인 이유: 대표 이미지는 상태 필터링된 첫 굿즈 하나만 필요하고
+     * (group by min(id)), items 는 그 장식장의 굿즈 전체가 필요해서 쿼리 모양이 다릅니다.
      */
     private List<ExhibitionSummaryResponse> toSummaries(List<Long> orderedIds, Long viewerId) {
         if (orderedIds.isEmpty()) {
@@ -193,6 +197,11 @@ public class ExhibitionService {
                 .filter(item -> item.getImageUrl() != null)
                 .collect(Collectors.toMap(item -> item.getExhibition().getId(), ExhibitionItem::getImageUrl));
 
+        // id asc 순으로 이미 정렬돼서 나오므로(리포지토리 쿼리), groupingBy 결과 리스트도 그 순서를 유지합니다.
+        Map<Long, List<ExhibitionItem>> itemsByExhibition = exhibitionItemRepository
+                .findAllByExhibitionIdsAndStatus(orderedIds, ItemStatus.READY).stream()
+                .collect(Collectors.groupingBy(item -> item.getExhibition().getId()));
+
         Map<Long, Long> likeCounts = exhibitionLikeRepository.countByExhibitionIds(orderedIds).stream()
                 .collect(Collectors.toMap(
                         ExhibitionLikeRepository.LikeCount::getExhibitionId,
@@ -208,6 +217,7 @@ public class ExhibitionService {
                 .map(exhibition -> ExhibitionSummaryResponse.of(
                         exhibition,
                         thumbnails.get(exhibition.getId()),
+                        itemsByExhibition.getOrDefault(exhibition.getId(), List.of()),
                         likeCounts.getOrDefault(exhibition.getId(), 0L),
                         likedByMe.contains(exhibition.getId())))
                 .toList();
