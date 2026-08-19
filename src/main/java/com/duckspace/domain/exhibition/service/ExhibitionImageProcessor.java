@@ -241,11 +241,22 @@ public class ExhibitionImageProcessor {
             imageCleanup.delete(existingSourceUrl);
 
         } catch (InterruptedException e) {
+            log.warn("이미지 처리가 중단되었습니다. id={}", logId);
+
+            // 복구를 먼저 하고, 인터럽트 신호는 그 뒤에 되살립니다. 순서가 핵심입니다 —
+            // 플래그를 먼저 세우면 아래 복구가 **반드시** 실패합니다. HikariCP 는 인터럽트된
+            // 스레드의 커넥션 획득을 SQLException 으로 거부하고, Files.write 는 파일을 만들고
+            // 비운 뒤에 ClosedByInterruptException 으로 끊깁니다. 그러면 행이
+            // PENDING · imageUrl=null 로 영원히 남는데, 그 상태는 재시도도 받지 못합니다
+            // (원본이 없어 RETRY_SOURCE_MISSING). 삭제 후 재업로드 말고는 복구가 없습니다.
+            //
+            // InterruptedException 이 던져질 때 플래그는 이미 지워져 있으므로, 여기서 다시
+            // 세우기 전까지 복구는 평범한 스레드에서 도는 것과 똑같이 동작합니다.
+            failKeepingSource(logId, keyPrefix, data, existingSourceUrl, recorder);
+
             // 인터럽트는 "실패" 가 아니라 "그만두라는 신호" 입니다. 삼키면 종료가 지연되고,
             // 상위 코드가 스레드 상태를 보고 판단할 방법이 사라집니다.
             Thread.currentThread().interrupt();
-            log.warn("이미지 처리가 중단되었습니다. id={}", logId);
-            failKeepingSource(logId, keyPrefix, data, existingSourceUrl, recorder);
 
         } catch (Exception e) {
             log.warn("이미지 처리 실패. id={}, 원인={}", logId, e.toString());
