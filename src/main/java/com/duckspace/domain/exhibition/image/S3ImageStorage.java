@@ -1,5 +1,7 @@
 package com.duckspace.domain.exhibition.image;
 
+import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
+import com.duckspace.global.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -57,13 +59,20 @@ public class S3ImageStorage implements ImageStorage {
 
     @Override
     public String upload(String key, byte[] content, String contentType) {
-        s3.putObject(
-                PutObjectRequest.builder()
-                        .bucket(bucket)
-                        .key(key)
-                        .contentType(contentType)
-                        .build(),
-                RequestBody.fromBytes(content));
+        // 감싸지 않으면 SDK 예외가 그대로 올라가 GlobalExceptionHandler 의 마지막 그물에
+        // 걸립니다 — 같은 "저장 실패" 가 로컬(BusinessException)과 운영(일반 500)에서 다르게
+        // 보입니다. deleteByUrl · download 는 이미 감싸져 있어 upload 만 비대칭이었습니다.
+        try {
+            s3.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .contentType(contentType)
+                            .build(),
+                    RequestBody.fromBytes(content));
+        } catch (Exception e) {
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED, e);
+        }
 
         log.debug("S3 업로드 완료: {}/{} ({} bytes)", bucket, key, content.length);
         return publicBaseUrl + "/" + key;

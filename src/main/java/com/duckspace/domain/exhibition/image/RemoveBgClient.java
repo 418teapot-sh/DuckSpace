@@ -1,5 +1,6 @@
 package com.duckspace.domain.exhibition.image;
 
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,15 @@ public class RemoveBgClient {
     private static final Pattern UNSAFE_FILENAME_CHARS = Pattern.compile("[^A-Za-z0-9._-]");
     private static final int MAX_FILENAME_LENGTH = 100;
     private static final String FALLBACK_FILENAME = "upload.png";
+
+    /**
+     * 에러 응답 본문을 로그에 남길 때의 상한.
+     *
+     * <p>이 메시지는 {@code ExhibitionImageProcessor} 가 {@code e.toString()} 으로 찍습니다.
+     * 프록시가 잘못 끼어 HTML 안내 페이지가 오면 수백 KB 가 로그에 통째로 들어갑니다.
+     * 원인 파악에는 앞부분이면 충분합니다.
+     */
+    private static final int ERROR_BODY_LOG_LIMIT = 512;
 
     private final String apiKey;
     private final String size;
@@ -87,7 +97,7 @@ public class RemoveBgClient {
 
         if (response.statusCode() != 200) {
             throw new IOException("remove.bg 호출 실패 (HTTP %d): %s".formatted(
-                    response.statusCode(), new String(response.body(), StandardCharsets.UTF_8)));
+                    response.statusCode(), summarize(response.body())));
         }
 
         // 응답도 픽셀 수 제한을 거쳐 디코딩합니다. 우리가 부른 API 라도 가드를 건너뛰면,
@@ -142,5 +152,24 @@ public class RemoveBgClient {
                 .getBytes(StandardCharsets.UTF_8));
         out.write(value.getBytes(StandardCharsets.UTF_8));
         out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 에러 본문을 로그에 넣을 만큼만 잘라냅니다. */
+    private static String summarize(byte[] responseBody) {
+        String text = new String(responseBody, StandardCharsets.UTF_8);
+        if (text.length() <= ERROR_BODY_LOG_LIMIT) {
+            return text;
+        }
+        return text.substring(0, ERROR_BODY_LOG_LIMIT) + "... (%d바이트 중 앞부분)".formatted(responseBody.length);
+    }
+
+    /**
+     * {@link HttpClient} 는 셀렉터 스레드와 커넥션 풀을 들고 있습니다. 운영에서는 싱글턴이라
+     * 한 번이지만, 테스트는 스프링 컨텍스트가 새로 뜰 때마다 이걸 하나씩 더 만들어서
+     * JVM 이 끝날 때까지 쌓입니다.
+     */
+    @PreDestroy
+    public void close() {
+        http.close();
     }
 }
