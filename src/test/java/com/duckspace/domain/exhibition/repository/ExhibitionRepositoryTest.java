@@ -313,4 +313,25 @@ class ExhibitionRepositoryTest {
                 .as("커서 뒤엣것만, 남의 장식장은 섞이지 않아야 합니다")
                 .containsExactly(third.getId());
     }
+
+    @Test
+    @DisplayName("장식장의 좋아요를 벌크 쿼리 한 번으로 지운다")
+    void 좋아요_일괄_삭제() {
+        // 파생 deleteBy... 는 행을 전부 SELECT 해서 영속성 컨텍스트에 올린 뒤 한 건씩
+        // 지웁니다. 좋아요가 많은 장식장을 지우면 그만큼 DELETE 가 나갑니다.
+        Exhibition target = exhibition(1L, "지울 장식장");
+        Exhibition other = exhibition(2L, "남을 장식장");
+        entityManager.persist(new ExhibitionLike(target, 10L));
+        entityManager.persist(new ExhibitionLike(target, 11L));
+        entityManager.persist(new ExhibitionLike(other, 10L));
+        entityManager.flush();
+
+        exhibitionLikeRepository.deleteByExhibitionId(target.getId());
+        entityManager.clear();   // 벌크 쿼리는 영속성 컨텍스트를 건너뛰므로 다시 읽습니다.
+
+        assertThat(exhibitionLikeRepository.countByExhibitionId(target.getId())).isZero();
+        assertThat(exhibitionLikeRepository.countByExhibitionId(other.getId()))
+                .as("다른 장식장의 좋아요는 그대로여야 합니다")
+                .isEqualTo(1);
+    }
 }
