@@ -209,6 +209,8 @@ class ExhibitionServiceTest {
             // S3 객체가 영구히 남습니다.
             verify(imageCleanup).deleteAfterCommit(List.of("https://cdn/a.png", "https://cdn/b.png"));
         }
+
+
     }
 
     @Nested

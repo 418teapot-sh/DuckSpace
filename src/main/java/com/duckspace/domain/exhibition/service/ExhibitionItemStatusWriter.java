@@ -64,9 +64,14 @@ class ExhibitionItemStatusWriter {
      * 가리키는 {@code FAILED}</b> 로 되돌아갑니다. 상태가 이미 바뀌었다면 그 결과는 버립니다.
      *
      * <p>처리 중에 사용자가 삭제한 경우도 여기서 같이 걸러집니다.
+     *
+     * <p><b>잠그고 읽는 이유</b>: 잠금 없이 읽으면 동시에 끝난 두 작업이 둘 다 {@code PENDING}
+     * 을 보고 둘 다 기록해, 늦게 커밋한 쪽이 먼저 커밋한 결과를 덮습니다. 덮인 쪽 이미지는
+     * 아무도 가리키지 않는데 {@code written=true} 라 회수 로직도 못 잡는 영구 고아가 됩니다.
+     * 잠그면 뒤에 온 쪽이 앞 커밋을 기다렸다가 바뀐 상태를 보고 물러납니다.
      */
     private Optional<ExhibitionItem> pending(Long itemId) {
-        Optional<ExhibitionItem> found = exhibitionItemRepository.findById(itemId);
+        Optional<ExhibitionItem> found = exhibitionItemRepository.findByIdForUpdate(itemId);
         if (found.isEmpty()) {
             log.info("상태를 기록할 아이템이 이미 없습니다. itemId={}", itemId);
             return Optional.empty();

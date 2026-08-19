@@ -33,7 +33,9 @@ import org.hibernate.type.SqlTypes;
         name = "exhibition_item",
         indexes = {
                 // 검색이 아이템 이름을 훑으므로 상태로 먼저 걸러냅니다.
-                @Index(name = "idx_exhibition_item_status", columnList = "status")
+                @Index(name = "idx_exhibition_item_status", columnList = "status"),
+                // 공유 이미지 삭제 보호가 URL 로 참조를 확인합니다. 없으면 삭제마다 풀스캔입니다.
+                @Index(name = "idx_exhibition_item_image_url", columnList = "image_url")
         }
 )
 @Getter

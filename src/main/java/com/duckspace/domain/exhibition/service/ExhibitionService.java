@@ -86,6 +86,8 @@ public class ExhibitionService {
         exhibitionLikeRepository.deleteByExhibitionId(exhibitionId);
         exhibitionRepository.delete(exhibition);
 
+        // 공유 여부(보관함 소유·다른 장식장 사용)는 ImageCleanup 이 삭제 직전에 URL 별로
+        // 판단합니다. 커밋 후 시점이라 이 장식장의 행은 이미 사라져, 남은 참조만 잡힙니다.
         imageCleanup.deleteAfterCommit(imageUrls);
     }
 

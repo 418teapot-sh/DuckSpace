@@ -6,9 +6,11 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -41,12 +43,45 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
      *
      * <p>잠그면 뒤에 온 요청이 앞 트랜잭션의 커밋을 기다렸다가 {@code PENDING} 을 보고
      * 스스로 물러납니다.
+     *
+     * <p>장식장 조건을 쿼리에 넣은 이유: id 만으로 잠그면 남의 굿즈 id 를 추측해 호출하는
+     * 것만으로 남의 행에 락 경합을 걸 수 있습니다. 조건에 안 걸리면 잠기지 않습니다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from ExhibitionItem i where i.id = :itemId and i.exhibition.id = :exhibitionId")
+    Optional<ExhibitionItem> findOwnedForUpdate(@Param("itemId") Long itemId,
+                                                @Param("exhibitionId") Long exhibitionId);
+
+    /**
+     * 백그라운드 결과 기록용 잠금 조회. 소유 확인이 필요 없는 내부 경로 전용입니다.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from ExhibitionItem i where i.id = :itemId")
     Optional<ExhibitionItem> findByIdForUpdate(@Param("itemId") Long itemId);
 
+    /**
+     * {@code updatedAt} 만 지금 시각으로 강제 갱신합니다.
+     *
+     * <p>이미 PENDING 인 행에 {@code markPending()} 을 불러도 바뀐 값이 없어 Hibernate 가
+     * UPDATE 를 생략하고, 방치 판정 기준인 {@code updatedAt} 이 그대로 남습니다. 그러면
+     * 방금 재시도를 받아줬는데도 계속 "방치됨" 으로 보여 연타로 중복 재처리가 접수됩니다.
+     * 재시도를 접수할 때 이걸 불러 방치 시계를 확실히 되감습니다.
+     */
+    @Modifying
+    @Query("update ExhibitionItem i set i.updatedAt = :now where i.id = :itemId")
+    void touchUpdatedAt(@Param("itemId") Long itemId, @Param("now") LocalDateTime now);
+
     void deleteByExhibitionId(Long exhibitionId);
+
+    /** 공유 이미지 삭제 보호용 — 이 URL 을 배치해 둔 굿즈가 있는지. ({@code GoodsImageService} 의 409 판단) */
+    boolean existsByImageUrl(String imageUrl);
+
+    /**
+     * 삭제 후보 중 <b>아직 굿즈가 배치 중인 URL</b> 만 골라냅니다. ({@code ImageCleanup} 전용)
+     * URL 마다 exists 를 날리면 장식장 통째 삭제에서 쿼리가 수십 번 나가서 in 절로 묶습니다.
+     */
+    @Query("select distinct i.imageUrl from ExhibitionItem i where i.imageUrl in :urls")
+    List<String> findReferencedUrls(@Param("urls") Collection<String> urls);
 
     /**
      * 장식장을 통째로 지우기 <b>전에</b> 정리할 이미지 주소만 모읍니다.

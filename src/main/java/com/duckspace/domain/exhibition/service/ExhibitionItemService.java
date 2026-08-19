@@ -10,7 +10,7 @@ import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.image.ImageCleanup;
-import com.duckspace.domain.exhibition.image.ImageInspector;
+import com.duckspace.domain.exhibition.image.MultipartImageValidator;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.Paging;
@@ -22,11 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -36,12 +33,6 @@ public class ExhibitionItemService {
 
     private static final int MAX_PAGE_SIZE = 50;
     private static final int DEFAULT_PAGE_SIZE = 20;
-
-    /** 이보다 오래 PENDING 인 아이템은 처리가 끊긴 것으로 보고 재시도를 허용합니다. */
-    private static final Duration ABANDONED_PENDING_THRESHOLD = Duration.ofMinutes(15);
-
-    /** 브라우저가 보내는 이미지 MIME 타입. ImageIO 가 읽을 수 있는 형식으로 제한합니다. */
-    private static final Set<String> SUPPORTED_TYPES = Set.of("image/jpeg", "image/jpg", "image/png");
 
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionService exhibitionService;
@@ -76,8 +67,8 @@ public class ExhibitionItemService {
         Exhibition exhibition = exhibitionService.getOwnedExhibition(exhibitionId, userId);
 
         // 행을 만들기 전에 바이트까지 확인합니다. 나중에 걸러내면 PENDING 인 껍데기가 남습니다.
-        byte[] data = readBytes(image);
-        validateImage(image, data);
+        byte[] data = MultipartImageValidator.readBytes(image);
+        MultipartImageValidator.validate(image, data);
 
         ExhibitionItem item = new ExhibitionItem(
                 exhibition, request.placement().toPlacement(), null,
@@ -123,11 +114,11 @@ public class ExhibitionItemService {
 
         // 행을 잠그고 읽습니다. 잠그지 않으면 빠르게 두 번 누른 요청이 둘 다 FAILED 를 보고
         // 통과해서, 같은 사진이 두 번 처리되고 remove.bg 크레딧도 두 번 나갑니다.
-        ExhibitionItem item = exhibitionItemRepository.findByIdForUpdate(itemId)
-                .filter(found -> found.belongsTo(exhibitionId))
+        ExhibitionItem item = exhibitionItemRepository.findOwnedForUpdate(itemId, exhibitionId)
                 .orElseThrow(() -> new BusinessException(ExhibitionErrorCode.ITEM_NOT_FOUND));
 
-        if (item.getStatus() != ItemStatus.FAILED && !isAbandonedPending(item)) {
+        if (item.getStatus() != ItemStatus.FAILED
+                && !AbandonedPending.isAbandoned(item.getStatus(), item.getUpdatedAt())) {
             // 뒤에 온 요청은 앞 요청이 PENDING 으로 바꿔둔 것을 보고 여기서 물러납니다.
             throw new BusinessException(ExhibitionErrorCode.ITEM_NOT_RETRYABLE);
         }
@@ -137,28 +128,13 @@ public class ExhibitionItemService {
         }
 
         item.markPending();
+        // 이미 PENDING(방치)이었다면 markPending 이 no-op 이라 updatedAt 이 그대로 남고,
+        // 그러면 계속 "방치됨" 으로 보여 연타마다 재처리가 중복 접수됩니다. 시계를 되감습니다.
+        exhibitionItemRepository.touchUpdatedAt(item.getId(), LocalDateTime.now());
         eventPublisher.publishEvent(
                 new ItemImageRetryRequestedEvent(item.getId(), exhibitionId, source));
 
         return ExhibitionItemResponse.from(item);
-    }
-
-    /**
-     * 강제 종료(OOM 등)로 처리가 끊긴 채 방치된 {@code PENDING} 인지.
-     *
-     * <p>정상 종료는 처리 완료를 기다리지만 프로세스가 그냥 죽으면 {@code PENDING} 이
-     * 영원히 남는데, 재시도가 {@code FAILED} 만 받으면 사용자가 복구할 방법이 없습니다.
-     * 그래서 <b>오래 방치된 PENDING 은 실패한 것으로 간주</b>하고 재시도를 허용합니다.
-     *
-     * <p>기준을 넉넉히 잡은 이유: 처리 큐가 꽉 찼을 때 최악 대기가 10분을 넘을 수 있습니다
-     * (큐 20 x remove.bg 타임아웃 60초 / 스레드 2). 아직 살아있는 작업과 겹치더라도,
-     * 결과 기록은 PENDING 가드가 선착순으로 지키고 늦은 쪽의 업로드는 회수되므로
-     * 낭비일 뿐 데이터가 깨지지는 않습니다.
-     */
-    private static boolean isAbandonedPending(ExhibitionItem item) {
-        return item.getStatus() == ItemStatus.PENDING
-                && item.getUpdatedAt() != null
-                && item.getUpdatedAt().isBefore(LocalDateTime.now().minus(ABANDONED_PENDING_THRESHOLD));
     }
 
     /** 드래그 이동·크기 조절 결과를 저장합니다. */
@@ -187,21 +163,20 @@ public class ExhibitionItemService {
                 : exhibitionItemRepository.findByExhibitionIdAndStatusInAndIdLessThanOrderByIdDesc(
                         exhibitionId, visible, cursor, pageable);
 
-        boolean hasNext = found.size() > pageSize;
-        List<ExhibitionItem> page = hasNext ? found.subList(0, pageSize) : found;
-        Long nextCursor = hasNext ? page.get(page.size() - 1).getId() : null;
-
+        Paging.Slice<ExhibitionItem> sliced = Paging.slice(found, pageSize, ExhibitionItem::getId);
         return new ExhibitionItemPageResponse(
-                page.stream().map(ExhibitionItemResponse::from).toList(), nextCursor, hasNext);
+                sliced.page().stream().map(ExhibitionItemResponse::from).toList(),
+                sliced.nextCursor(), sliced.hasNext());
     }
 
     @Transactional
     public void delete(Long exhibitionId, Long itemId, Long userId) {
         exhibitionService.getOwnedExhibition(exhibitionId, userId);
-
         ExhibitionItem item = getItemOf(exhibitionId, itemId);
+
         exhibitionItemRepository.delete(item);
-        // DB 행만 지우면 S3 객체가 그대로 남습니다.
+        // 공유 여부(보관함 소유·다른 굿즈 재사용)는 ImageCleanup 이 삭제 직전에 판단합니다.
+        // 여기서 미리 판단하면 판단과 삭제 사이에 새 배치가 끼어드는 경합이 남습니다.
         imageCleanup.deleteAfterCommit(item.getImageUrl());
     }
 
@@ -215,32 +190,4 @@ public class ExhibitionItemService {
         return item;
     }
 
-    /**
-     * 업로드된 파일이 정말 이미지인지 확인합니다.
-     *
-     * <p><b>{@code Content-Type} 헤더만 믿으면 안 됩니다.</b> 클라이언트가 보내는 값이라
-     * 아무 파일에나 {@code image/png} 를 붙일 수 있고, 그러면 처리에 실패한 뒤 원본이 그대로
-     * 저장되어 <b>공개 URL 로 서빙됩니다</b> — 업로드 창구가 곧 파일 호스팅이 됩니다.
-     * 그래서 실제 바이트를 디코더에 물어봅니다.
-     */
-    private void validateImage(MultipartFile image, byte[] data) {
-        if (image == null || image.isEmpty() || data.length == 0) {
-            throw new BusinessException(ExhibitionErrorCode.EMPTY_IMAGE);
-        }
-        String contentType = image.getContentType();
-        if (contentType == null || !SUPPORTED_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
-            throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
-        }
-        if (!ImageInspector.isSupported(data)) {
-            throw new BusinessException(ExhibitionErrorCode.UNSUPPORTED_IMAGE_TYPE);
-        }
-    }
-
-    private byte[] readBytes(MultipartFile image) {
-        try {
-            return image.getBytes();
-        } catch (IOException e) {
-            throw new BusinessException(ExhibitionErrorCode.IMAGE_PROCESSING_FAILED);
-        }
-    }
 }
