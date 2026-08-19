@@ -260,6 +260,74 @@ class ExhibitionServiceTest {
     }
 
     @Nested
+    @DisplayName("getByUser 메서드는")
+    class ByUser {
+
+        @Test
+        @DisplayName("조회 대상(userId)이 아니라 보는 사람(viewerId) 기준으로 likedByMe 를 채운다")
+        void viewerId_기준으로_likedByMe를_채운다() {
+            Exhibition e = exhibitionWithId(3L, OWNER, "남의 장식장");
+
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of());
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(STRANGER, List.of(3L))).willReturn(List.of(3L));
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, STRANGER, null);
+
+            assertThat(result).extracting(ExhibitionSummaryResponse::exhibitionId).containsExactly(3L);
+            assertThat(result.get(0).likedByMe())
+                    .as("본인(OWNER)이 아니라 보는 사람(STRANGER)의 좋아요 여부여야 합니다")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("비로그인(viewerId=null)이어도 좋아요 여부만 false 로 채워 돌려준다")
+        void 비로그인도_조회할_수_있다() {
+            Exhibition e = exhibitionWithId(3L, OWNER, "남의 장식장");
+
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
+                    .willReturn(List.of());
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+            given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, null, null);
+
+            assertThat(result.get(0).likedByMe()).isFalse();
+        }
+
+        @Test
+        @DisplayName("장식장이 하나도 없으면 예외 없이 빈 목록을 돌려준다")
+        void 장식장이_없으면_빈목록() {
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, STRANGER, null);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("limit을 주지 않으면 getMine 과 같은 기본값(20)을 쓴다")
+        void limit을_주지_않으면_20개를_가져온다() {
+            given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
+                    .willReturn(List.of());
+
+            exhibitionService.getByUser(OWNER, STRANGER, null);
+
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(exhibitionRepository).findIdsByUserId(eq(OWNER), captor.capture());
+            assertThat(captor.getValue().getPageSize()).isEqualTo(20);
+        }
+    }
+
+    @Nested
     @DisplayName("getPrimary 메서드는")
     class Primary {
 

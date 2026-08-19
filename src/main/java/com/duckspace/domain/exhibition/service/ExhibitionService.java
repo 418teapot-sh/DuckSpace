@@ -119,6 +119,20 @@ public class ExhibitionService {
     }
 
     /**
+     * 특정 유저의 장식장 목록. 다른 유저 프로필의 장식장 탭에서 씁니다.
+     *
+     * <p>정렬·기본값·상한은 {@link #getMine} 과 같습니다(만든 순서대로, 오래된 것부터).
+     * {@code getMine} 과 달리 조회 대상({@code userId})과 보는 사람({@code viewerId})이
+     * 분리돼 있습니다 — 남의 장식장 목록을 보는 것이라 {@code likedByMe} 는 실제 보는 사람
+     * 기준입니다. 장식장이 하나도 없으면 빈 목록입니다({@link #getPrimary} 와 달리 404 아님).
+     */
+    public List<ExhibitionSummaryResponse> getByUser(Long userId, Long viewerId, Integer limit) {
+        List<Long> ids = exhibitionRepository.findIdsByUserId(
+                userId, PageRequest.of(0, Paging.normalize(limit, MINE_DEFAULT_LIMIT, MAX_LIMIT)));
+        return toSummaries(ids, viewerId);
+    }
+
+    /**
      * 유저의 대표 장식장. 프로필 화면에서 "이 사람의 장식장" 버튼으로 이동할 때 씁니다.
      *
      * <p>유저가 장식장을 여러 개 가질 수 있어 "대표"가 모호하지만, 가장 먼저 만든(id가 가장

@@ -105,6 +105,20 @@ public class ExhibitionController {
         return ApiResponse.success(exhibitionService.getPrimary(userId, AuthUser.idOrNull(authUser)));
     }
 
+    @Operation(summary = "특정 유저의 장식장 목록",
+            description = """
+                    다른 유저 프로필의 장식장 탭에서 씁니다. 만든 순서대로(오래된 것부터) 돌려줍니다.
+                    limit 기본 20, 최대 50. 정렬·페이지네이션 정책은 /me 와 같습니다.
+                    장식장이 하나도 없으면 빈 배열입니다.
+                    **비로그인도 호출할 수 있습니다.** 이때 likedByMe 는 전부 false 입니다.
+                    """)
+    @GetMapping("/users/{userId:[0-9]+}")
+    public ApiResponse<List<ExhibitionSummaryResponse>> byUser(@AuthenticationPrincipal AuthUser authUser,
+                                                                 @PathVariable Long userId,
+                                                                 @RequestParam(required = false) Integer limit) {
+        return ApiResponse.success(exhibitionService.getByUser(userId, AuthUser.idOrNull(authUser), limit));
+    }
+
     @Operation(summary = "장식장 상세",
             description = """
                     배치된 굿즈를 전부 돌려줍니다. 각 굿즈의 posX/posY/width/height/rotation 으로 그리면 됩니다.
