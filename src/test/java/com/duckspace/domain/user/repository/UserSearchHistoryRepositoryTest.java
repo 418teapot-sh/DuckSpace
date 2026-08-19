@@ -16,12 +16,14 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * 검색 내역(UserSearchHistory) 쿼리를 실제 MySQL로 확인합니다.
  * - findBySearcherIdOrderByIdDesc가 최근 클릭 순으로 나오는지 (fetch join으로 searchedUser도 채워지는지)
  * - 3개 초과 시 가장 오래된 항목을 골라내는 findFirstBySearcherIdOrderByIdAsc
  * - 닉네임 검색(UserRepository.searchByNickname)이 대소문자 무시하고 부분일치하는지
+ * - (searcher_id, searched_user_id) 유니크 제약이 실제로 DB에서 걸리는지
  */
 @DataJpaTest
 @Import(JpaAuditingConfig.class)
@@ -110,6 +112,19 @@ class UserSearchHistoryRepositoryTest {
 
         assertThat(searchHistoryRepository.countBySearcherId(searcher.getId())).isZero();
         assertThat(searchHistoryRepository.countBySearcherId(other.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void 같은_조합을_두번_저장하면_유니크_제약에_걸린다() {
+        User searcher = newUser("나");
+        User target = newUser("검색대상");
+        searchHistoryRepository.save(UserSearchHistory.of(searcher, target));
+        entityManager.flush();
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> {
+            searchHistoryRepository.save(UserSearchHistory.of(searcher, target));
+            entityManager.flush();
+        });
     }
 
     @Test

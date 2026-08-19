@@ -1,31 +1,43 @@
 package com.duckspace.domain.user.service;
 
 import com.duckspace.domain.user.entity.User;
-import com.duckspace.domain.user.entity.UserSearchHistory;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.domain.user.repository.UserSearchHistoryRepository;
+import com.duckspace.global.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
-import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+/**
+ * 실제 삭제/INSERT/트리밍 로직은 {@link UserSearchHistoryWriter}에 있어서(별도 트랜잭션이 필요한
+ * 이유는 그 클래스 문서 참고) 여기서는 writer를 목으로 두고 record()가 언제 호출/무시하는지만 봅니다.
+ * writer 자체의 트리밍 로직은 {@link UserSearchHistoryWriterTest}, 전체 흐름의 실제 DB 동작은
+ * {@link UserSearchServiceIntegrationTest} 참고.
+ */
 @ExtendWith(MockitoExtension.class)
 class UserSearchServiceTest {
 
     private static final Long SEARCHER_ID = 1L;
     private static final Long TARGET_ID = 2L;
+    private static final int MAX_HISTORY_SIZE = 3;
 
     @Mock
     private UserRepository userRepository;
@@ -33,8 +45,20 @@ class UserSearchServiceTest {
     @Mock
     private UserSearchHistoryRepository searchHistoryRepository;
 
+    @Mock
+    private UserSearchHistoryWriter searchHistoryWriter;
+
     @InjectMocks
     private UserSearchService userSearchService;
+
+    private void 유저_둘_다_존재() {
+        User searcher = mock(User.class);
+        User target = mock(User.class);
+        given(userRepository.findAllById(List.of(SEARCHER_ID, TARGET_ID)))
+                .willReturn(List.of(searcher, target));
+        given(searcher.getId()).willReturn(SEARCHER_ID);
+        given(target.getId()).willReturn(TARGET_ID);
+    }
 
     @Test
     @DisplayName("키워드가 비어 있으면 조회 없이 빈 목록을 돌려준다")
@@ -48,47 +72,37 @@ class UserSearchServiceTest {
     void 자기_자신_클릭은_무시() {
         userSearchService.record(SEARCHER_ID, SEARCHER_ID);
 
-        verify(searchHistoryRepository, never()).save(any(UserSearchHistory.class));
+        verify(searchHistoryWriter, never()).replace(anyLong(), anyLong(), anyInt());
     }
 
     @Test
-    @DisplayName("이미 있던 항목을 다시 클릭하면 지우고 다시 넣어서 맨 위로 올린다")
-    void 중복_클릭은_맨_위로_이동() {
-        given(userRepository.findById(SEARCHER_ID)).willReturn(Optional.of(mock(User.class)));
-        given(userRepository.findById(TARGET_ID)).willReturn(Optional.of(mock(User.class)));
-        given(searchHistoryRepository.countBySearcherId(SEARCHER_ID)).willReturn(1L);
+    @DisplayName("존재하는 유저끼리면 writer에 최대 개수와 함께 기록을 위임한다")
+    void 기록은_writer에게_위임() {
+        유저_둘_다_존재();
 
         userSearchService.record(SEARCHER_ID, TARGET_ID);
 
-        verify(searchHistoryRepository).deleteBySearcherIdAndSearchedUserId(SEARCHER_ID, TARGET_ID);
-        verify(searchHistoryRepository, times(1)).save(any(UserSearchHistory.class));
+        verify(searchHistoryWriter, times(1)).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
     }
 
     @Test
-    @DisplayName("3개를 넘기면 가장 오래된 항목을 지운다")
-    void 세개_초과시_가장_오래된_항목_삭제() {
-        given(userRepository.findById(SEARCHER_ID)).willReturn(Optional.of(mock(User.class)));
-        given(userRepository.findById(TARGET_ID)).willReturn(Optional.of(mock(User.class)));
-        given(searchHistoryRepository.countBySearcherId(SEARCHER_ID)).willReturn(4L);
-        given(searchHistoryRepository.findFirstBySearcherIdOrderByIdAsc(SEARCHER_ID))
-                .willReturn(Optional.of(mock(UserSearchHistory.class)));
+    @DisplayName("동시에 같은 조합이 다시 클릭돼 유니크 제약에 걸려도(원하는 상태는 이미 달성됨) 예외를 밖으로 던지지 않는다")
+    void 동시_중복_클릭은_예외를_삼킨다() {
+        유저_둘_다_존재();
+        willThrow(new DataIntegrityViolationException("duplicate key"))
+                .given(searchHistoryWriter).replace(SEARCHER_ID, TARGET_ID, MAX_HISTORY_SIZE);
 
-        userSearchService.record(SEARCHER_ID, TARGET_ID);
-
-        verify(searchHistoryRepository).findFirstBySearcherIdOrderByIdAsc(SEARCHER_ID);
-        verify(searchHistoryRepository).delete(any(UserSearchHistory.class));
+        assertDoesNotThrow(() -> userSearchService.record(SEARCHER_ID, TARGET_ID));
     }
 
     @Test
-    @DisplayName("3개 이하면 오래된 항목을 지우지 않는다")
-    void 세개_이하면_삭제하지_않는다() {
-        given(userRepository.findById(SEARCHER_ID)).willReturn(Optional.of(mock(User.class)));
-        given(userRepository.findById(TARGET_ID)).willReturn(Optional.of(mock(User.class)));
-        given(searchHistoryRepository.countBySearcherId(SEARCHER_ID)).willReturn(3L);
+    @DisplayName("존재하지 않는 유저를 대상으로 기록하면 USER_NOT_FOUND")
+    void 없는_유저는_예외() {
+        given(userRepository.findAllById(List.of(SEARCHER_ID, TARGET_ID))).willReturn(List.of());
 
-        userSearchService.record(SEARCHER_ID, TARGET_ID);
+        assertThrows(BusinessException.class, () -> userSearchService.record(SEARCHER_ID, TARGET_ID));
 
-        verify(searchHistoryRepository, never()).findFirstBySearcherIdOrderByIdAsc(SEARCHER_ID);
+        verify(searchHistoryWriter, never()).replace(anyLong(), anyLong(), anyInt());
     }
 
     @Test
