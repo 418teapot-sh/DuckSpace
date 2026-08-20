@@ -108,8 +108,9 @@ public class BannerService {
         }
     }
 
+    /** popupId가 없으면(순수 광고 배너) 검증할 대상 자체가 없으니 통과시킨다. */
     private void validatePopupExists(Long popupId) {
-        if (!popupRepository.existsById(popupId)) {
+        if (popupId != null && !popupRepository.existsById(popupId)) {
             throw new BusinessException(BannerErrorCode.POPUP_NOT_FOUND);
         }
     }

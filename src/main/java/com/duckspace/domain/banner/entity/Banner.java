@@ -39,8 +39,7 @@ public class Banner extends BaseTimeEntity {
     @Lob
     private String aiSummary;
 
-    /** 배너 클릭 시 이동할 팝업 id */
-    @Column(nullable = false)
+    /** 배너 클릭 시 이동할 팝업 id. null이면 팝업과 무관한 순수 광고 배너 — 클릭해도 아무 데로도 안 이동한다. */
     private Long popupId;
 
     @Column(nullable = false)
