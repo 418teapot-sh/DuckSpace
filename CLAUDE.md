@@ -158,13 +158,16 @@ JWT에서 `userId`만 꺼내므로 DB 조회가 없습니다. User 엔티티가 
 - **외부 API 키는 프로젝트 루트 `.env`에 넣습니다.** `application.yml`이 `spring.config.import`로
   읽고, `.gitignore`에 막혀 있습니다. 없어도 부팅은 됩니다(해당 기능만 비활성).
   ```
-  REMOVEBG_API_KEY=...
+  REMOVEBG_API_KEYS=key1,key2,...
   OPENAI_API_KEY=...
   ```
   `JWT_SECRET`처럼 없으면 부팅이 실패해야 하는 값과 달리, 이건 **키가 없는 팀원도 나머지 기능을
   개발할 수 있어야 해서** 빈 기본값을 둡니다. dev/prod는 `/etc/duckspace/app.env`를 씁니다.
-- **remove.bg는 무료 호출이 월 50회, 0.25MP(preview)로 제한**됩니다. `size=auto`나 `full`은
+- **remove.bg는 계정당 무료 호출이 월 50회, 0.25MP(preview)로 제한**됩니다. `size=auto`나 `full`은
   크레딧을 소모하므로 무료 플랜에서는 실패합니다. 개발 중 반복 테스트에는 API를 쓰지 마세요.
+  서로 다른 계정에서 발급받은 키를 콤마로 여러 개 넣으면(`REMOVEBG_API_KEYS`), 하나가 크레딧을
+  소진(402)하거나 무효(403)해질 때 자동으로 다음 키로 전환됩니다(`RemoveBgClient`).
+  `REMOVEBG_API_KEY`(단수)는 예전 이름이며 폴백으로만 남아있으니 새로 설정할 땐 쓰지 마세요.
 - 리프레시 토큰 저장소가 아직 없습니다. 로그아웃·재발급을 구현하려면 테이블이 필요합니다.
 - 소셜 로그인(카카오)은 현재 구현 범위가 아닙니다. **폼 로그인**으로 진행합니다.
   나중에 붙일 수 있도록 `User`에 `provider`, `provider_id`를 nullable로 열어두기로 했습니다.

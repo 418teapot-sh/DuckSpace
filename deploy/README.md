@@ -40,8 +40,14 @@ DB_URL=...
 DB_USERNAME=...
 DB_PASSWORD=...
 JWT_SECRET=...
-OPENAI_API_KEY=...   # 아직 빈 값이어도 됨
+OPENAI_API_KEY=...        # 아직 빈 값이어도 됨
+REMOVEBG_API_KEYS=key1,key2,key3,key4,key5,key6   # 아직 빈 값이어도 됨 (콤마 구분, 서로 다른 계정 키)
 ```
+
+`REMOVEBG_API_KEYS`(복수)가 예전 이름 `REMOVEBG_API_KEY`(단수)를 대체합니다. 옛날 이름만
+설정돼 있으면 부팅은 정상적으로 되지만 배경 제거가 조용히 꺼진 채로 200을 응답합니다 —
+굿즈 사진을 직접 열어보기 전까지 티가 안 나니, 이 서버에 이미 `REMOVEBG_API_KEY`가 설정돼
+있었다면 `REMOVEBG_API_KEYS`로 이름을 옮겨주세요.
 
 ## 3. nginx 리버스 프록시 + HTTPS
 
