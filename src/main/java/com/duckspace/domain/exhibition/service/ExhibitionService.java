@@ -158,15 +158,24 @@ public class ExhibitionService {
         return toSummaries(ids, viewerId).get(0);
     }
 
-    /** 홈 화면 "인기 전시장". 좋아요가 많은 순입니다. */
+    /**
+     * 홈 화면 "인기 전시장". 좋아요가 많은 순입니다.
+     *
+     * <p>{@link #getRecent} 와 마찬가지로 <b>굿즈가 하나도 없는 장식장은 빠집니다.</b>
+     * 발견 화면이라 그림 없는 카드를 보여줄 이유가 없습니다.
+     */
     public List<ExhibitionSummaryResponse> getPopular(Integer limit, Long viewerId) {
-        List<Long> ids = exhibitionRepository.findPopularIds(
+        List<Long> ids = exhibitionRepository.findPopularIds(ItemStatus.READY,
                 PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
         return toSummaries(ids, viewerId);
     }
 
     /**
-     * 검색 탭 기본 화면의 장식장 피드. 필터 없이 최신 등록순 커서 페이징입니다.
+     * 검색 탭 기본 화면의 장식장 피드. 최신 등록순 커서 페이징입니다.
+     *
+     * <p><b>굿즈가 하나도 없는 장식장은 빠집니다.</b> 가입할 때마다 기본 장식장이 자동으로
+     * 생기는데, 거르지 않으면 첫 페이지가 빈 카드로 도배됩니다. 거르는 곳이 쿼리인 이유와
+     * 내 장식장 목록에는 왜 안 거는지는 {@code ExhibitionRepository#findRecentIds} 참고.
      *
      * <p>{@code cursor} 가 0 이하면 첫 페이지로 취급합니다 — 장식장 id 는 1부터 시작해서,
      * 0 이하를 그대로 리포지토리에 넘기면 데이터가 있어도 빈 목록이 나옵니다. 정상 흐름
@@ -179,7 +188,7 @@ public class ExhibitionService {
         Pageable pageable = PageRequest.of(0, pageSize + 1);
         Long normalizedCursor = (cursor == null || cursor <= 0) ? null : cursor;
 
-        List<Long> found = exhibitionRepository.findRecentIds(normalizedCursor, pageable);
+        List<Long> found = exhibitionRepository.findRecentIds(normalizedCursor, ItemStatus.READY, pageable);
 
         Paging.Slice<Long> sliced = Paging.slice(found, pageSize, id -> id);
         return new ExhibitionSummaryPageResponse(

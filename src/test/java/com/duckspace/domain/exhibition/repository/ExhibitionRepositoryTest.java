@@ -53,12 +53,25 @@ class ExhibitionRepositoryTest {
         entityManager.persist(new ExhibitionLike(e, userId));
     }
 
+    /**
+     * 굿즈를 하나 넣어둔 장식장.
+     *
+     * <p>피드·인기순은 <b>굿즈가 없는 장식장을 거릅니다.</b> 그 두 쿼리의 정렬·커서를 보는
+     * 테스트는 장식장이 필터에 걸려 사라지면 안 되므로 여기로 만듭니다.
+     * 필터 자체를 보는 테스트는 {@code exhibition(...)} 으로 빈 것을 만들어 씁니다.
+     */
+    private Exhibition exhibitionWithItem(Long userId, String name) {
+        Exhibition e = exhibition(userId, name);
+        item(e, name, "굿즈", ItemStatus.READY);
+        return e;
+    }
+
     @Test
     @DisplayName("인기순 — 좋아요가 많은 순서로, 0개인 장식장도 포함된다")
     void 인기순_정렬() {
-        Exhibition popular = exhibition(1L, "인기");
-        Exhibition medium = exhibition(2L, "보통");
-        Exhibition empty = exhibition(3L, "좋아요없음");
+        Exhibition popular = exhibitionWithItem(1L, "인기");
+        Exhibition medium = exhibitionWithItem(2L, "보통");
+        Exhibition empty = exhibitionWithItem(3L, "좋아요없음");
 
         like(popular, 10L);
         like(popular, 11L);
@@ -66,7 +79,7 @@ class ExhibitionRepositoryTest {
         like(medium, 10L);
         entityManager.flush();
 
-        List<Long> ids = exhibitionRepository.findPopularIds(PageRequest.of(0, 10));
+        List<Long> ids = exhibitionRepository.findPopularIds(ItemStatus.READY, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(popular.getId(), medium.getId(), empty.getId());
     }
@@ -74,12 +87,12 @@ class ExhibitionRepositoryTest {
     @Test
     @DisplayName("인기순 — limit 만큼만 가져온다")
     void 인기순_limit() {
-        Exhibition a = exhibition(1L, "A");
-        exhibition(2L, "B");
+        Exhibition a = exhibitionWithItem(1L, "A");
+        exhibitionWithItem(2L, "B");
         like(a, 10L);
         entityManager.flush();
 
-        assertThat(exhibitionRepository.findPopularIds(PageRequest.of(0, 1))).containsExactly(a.getId());
+        assertThat(exhibitionRepository.findPopularIds(ItemStatus.READY, PageRequest.of(0, 1))).containsExactly(a.getId());
     }
 
     @Test
@@ -160,6 +173,67 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
+    @DisplayName("피드 — 굿즈가 없는 장식장은 빠지고, 내 장식장 목록에는 그대로 남는다")
+    void 피드는_빈_장식장을_거른다() {
+        // 가입할 때마다 기본 장식장이 자동으로 생깁니다. 거르지 않으면 첫 페이지가 빈 카드로
+        // 도배되고, 굿즈를 실제로 올린 장식장이 뒤로 밀립니다.
+        Exhibition empty = exhibition(1L, "가입하고 안 쓴 장식장");
+        Exhibition filled = exhibition(1L, "굿즈 올린 장식장");
+        item(filled, "f1", "굿즈", ItemStatus.READY);
+
+        // 사진이 아직 처리 중이면 카드에 그릴 그림이 없으므로 빈 것으로 봅니다.
+        Exhibition pendingOnly = exhibition(2L, "업로드 직후");
+        item(pendingOnly, "p1", "처리중", ItemStatus.PENDING);
+        entityManager.flush();
+
+        List<Long> feed = exhibitionRepository.findRecentIds(
+                null, ItemStatus.READY, PageRequest.of(0, 10));
+
+        assertThat(feed)
+                .as("READY 굿즈가 있는 장식장만 나와야 합니다")
+                .containsExactly(filled.getId());
+
+        List<Long> popular = exhibitionRepository.findPopularIds(
+                ItemStatus.READY, PageRequest.of(0, 10));
+        assertThat(popular).as("인기순도 같은 기준입니다").containsExactly(filled.getId());
+
+        // 반대로 자기 장식장 목록에서 빈 것이 사라지면 방금 만든 장식장을 찾을 수 없습니다.
+        List<Long> mine = exhibitionRepository.findIdsByUserId(1L, PageRequest.of(0, 10));
+        assertThat(mine)
+                .as("내 장식장 목록에는 빈 장식장도 그대로 나와야 합니다")
+                .containsExactly(empty.getId(), filled.getId());
+    }
+
+    @Test
+    @DisplayName("피드 — 빈 장식장을 거른 뒤에도 커서 페이징이 어긋나지 않는다")
+    void 빈_장식장을_거른_커서_페이징() {
+        // 필터가 쿼리에 있어야 하는 이유입니다. 서비스에서 걸러내면 pageSize+1 개를 받아
+        // 그중 다수가 빠져 페이지가 짧아지고, hasNext 는 필터 전 개수로 계산돼 틀립니다.
+        Exhibition first = exhibition(1L, "굿즈1");
+        item(first, "i1", "굿즈", ItemStatus.READY);
+        exhibition(1L, "빈 장식장1");
+        Exhibition second = exhibition(1L, "굿즈2");
+        item(second, "i2", "굿즈", ItemStatus.READY);
+        exhibition(1L, "빈 장식장2");
+        Exhibition third = exhibition(1L, "굿즈3");
+        item(third, "i3", "굿즈", ItemStatus.READY);
+        entityManager.flush();
+
+        // 최신순(id desc)이라 third → second → first. 2개짜리 페이지 + 1 개를 요청합니다.
+        List<Long> page1 = exhibitionRepository.findRecentIds(
+                null, ItemStatus.READY, PageRequest.of(0, 3));
+        assertThat(page1)
+                .as("빈 장식장이 섞여 있어도 굿즈 있는 것만 세 개가 채워집니다")
+                .containsExactly(third.getId(), second.getId(), first.getId());
+
+        List<Long> page2 = exhibitionRepository.findRecentIds(
+                second.getId(), ItemStatus.READY, PageRequest.of(0, 3));
+        assertThat(page2)
+                .as("커서보다 오래된 것 중에서도 빈 장식장은 빠집니다")
+                .containsExactly(first.getId());
+    }
+
+    @Test
     @DisplayName("카드 미리보기 — 상한이 장식장마다 따로 걸린다 (전체 개수가 아니라)")
     void 미리보기_상한은_장식장별() {
         // 예전에는 굿즈를 전부 가져온 뒤 자바에서 잘랐습니다. 응답만 잡히고 DB·영속성 컨텍스트에는
@@ -223,14 +297,14 @@ class ExhibitionRepositoryTest {
     @Test
     @DisplayName("검색 탭 피드 — 좋아요와 무관하게 최신 등록순(id desc)이다")
     void 최신순_정렬() {
-        Exhibition oldest = exhibition(1L, "먼저등록");
-        Exhibition newest = exhibition(2L, "나중등록");
+        Exhibition oldest = exhibitionWithItem(1L, "먼저등록");
+        Exhibition newest = exhibitionWithItem(2L, "나중등록");
         // 인기순과 다르다는 걸 보여주려고 오래된 쪽에 좋아요를 몰아줍니다.
         like(oldest, 10L);
         like(oldest, 11L);
         entityManager.flush();
 
-        List<Long> ids = exhibitionRepository.findRecentIds(null, PageRequest.of(0, 10));
+        List<Long> ids = exhibitionRepository.findRecentIds(null, ItemStatus.READY, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(newest.getId(), oldest.getId());
     }
@@ -238,23 +312,23 @@ class ExhibitionRepositoryTest {
     @Test
     @DisplayName("검색 탭 피드 — size 만큼만 가져온다")
     void 최신순_limit() {
-        exhibition(1L, "A");
-        Exhibition newest = exhibition(2L, "B");
+        exhibitionWithItem(1L, "A");
+        Exhibition newest = exhibitionWithItem(2L, "B");
         entityManager.flush();
 
-        assertThat(exhibitionRepository.findRecentIds(null, PageRequest.of(0, 1)))
+        assertThat(exhibitionRepository.findRecentIds(null, ItemStatus.READY, PageRequest.of(0, 1)))
                 .containsExactly(newest.getId());
     }
 
     @Test
     @DisplayName("검색 탭 피드 더보기 — 커서보다 오래된 것만 가져온다")
     void 최신순_커서() {
-        Exhibition oldest = exhibition(1L, "A");
-        Exhibition middle = exhibition(2L, "B");
-        exhibition(3L, "C");
+        Exhibition oldest = exhibitionWithItem(1L, "A");
+        Exhibition middle = exhibitionWithItem(2L, "B");
+        exhibitionWithItem(3L, "C");
         entityManager.flush();
 
-        List<Long> ids = exhibitionRepository.findRecentIds(middle.getId() + 1, PageRequest.of(0, 10));
+        List<Long> ids = exhibitionRepository.findRecentIds(middle.getId() + 1, ItemStatus.READY, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(middle.getId(), oldest.getId());
     }
@@ -262,11 +336,11 @@ class ExhibitionRepositoryTest {
     @Test
     @DisplayName("검색 탭 피드 — cursor 가 null 이면 첫 페이지 전체를 가져온다")
     void 최신순_커서_null이면_첫페이지() {
-        Exhibition oldest = exhibition(1L, "A");
-        Exhibition newest = exhibition(2L, "B");
+        Exhibition oldest = exhibitionWithItem(1L, "A");
+        Exhibition newest = exhibitionWithItem(2L, "B");
         entityManager.flush();
 
-        List<Long> ids = exhibitionRepository.findRecentIds(null, PageRequest.of(0, 10));
+        List<Long> ids = exhibitionRepository.findRecentIds(null, ItemStatus.READY, PageRequest.of(0, 10));
 
         assertThat(ids).containsExactly(newest.getId(), oldest.getId());
     }

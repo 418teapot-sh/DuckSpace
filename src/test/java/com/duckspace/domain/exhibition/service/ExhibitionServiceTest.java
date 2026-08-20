@@ -406,7 +406,7 @@ class ExhibitionServiceTest {
             Exhibition first = exhibitionWithId(3L, 2L, "인기1위");
             Exhibition second = exhibitionWithId(1L, 3L, "인기2위");
 
-            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
+            given(exhibitionRepository.findPopularIds(eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of(3L, 1L));
             // findAllById 는 순서를 보장하지 않으므로 일부러 뒤집어서 돌려줍니다.
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(second, first));
             givenPreviewItems(List.of(3L, 1L), List.of(itemOf(first, "thumb.png")));
@@ -430,7 +430,7 @@ class ExhibitionServiceTest {
             ExhibitionItem firstItem = itemOf(first, "first.png");
             ExhibitionItem secondItem = itemOf(second, "second.png");
 
-            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
+            given(exhibitionRepository.findPopularIds(eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of(3L, 1L));
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(first, second));
             givenPreviewItems(List.of(3L, 1L), List.of(firstItem, secondItem));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
@@ -448,7 +448,7 @@ class ExhibitionServiceTest {
             // 홈 화면(/api/home)이 인증 없이 열려서 viewerId 가 null 로 들어옵니다.
             Exhibition e = exhibitionWithId(3L, 2L, "인기1위");
 
-            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L));
+            given(exhibitionRepository.findPopularIds(eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
 
@@ -461,12 +461,12 @@ class ExhibitionServiceTest {
 
         @Test
         void limit은_최대치를_넘지_않는다() {
-            given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of());
+            given(exhibitionRepository.findPopularIds(eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of());
 
             exhibitionService.getPopular(999, OWNER);
 
             ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-            verify(exhibitionRepository).findPopularIds(captor.capture());
+            verify(exhibitionRepository).findPopularIds(eq(ItemStatus.READY), captor.capture());
             assertThat(captor.getValue().getPageSize()).isEqualTo(50);
         }
     }
@@ -478,11 +478,11 @@ class ExhibitionServiceTest {
         @Test
         @DisplayName("cursor 가 null 이면 리포지토리에도 null 로 넘긴다")
         void cursor가_null이면_그대로_null() {
-            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of());
+            given(exhibitionRepository.findRecentIds(isNull(), eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of());
 
             exhibitionService.getRecent(null, 10, OWNER);
 
-            verify(exhibitionRepository).findRecentIds(isNull(), any(Pageable.class));
+            verify(exhibitionRepository).findRecentIds(isNull(), eq(ItemStatus.READY), any(Pageable.class));
         }
 
         @Test
@@ -490,22 +490,22 @@ class ExhibitionServiceTest {
         void cursor가_0이하면_null로_정규화한다() {
             // 장식장 id 는 1부터 시작해서, 0 이하를 그대로 넘기면 e.id < 0 이 되어 데이터가
             // 있어도 항상 빈 목록이 나옵니다(PR #86 리뷰) — 여기서 null 로 정규화해 막습니다.
-            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of());
+            given(exhibitionRepository.findRecentIds(isNull(), eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of());
 
             exhibitionService.getRecent(0L, 10, OWNER);
             exhibitionService.getRecent(-5L, 10, OWNER);
 
-            verify(exhibitionRepository, times(2)).findRecentIds(isNull(), any(Pageable.class));
+            verify(exhibitionRepository, times(2)).findRecentIds(isNull(), eq(ItemStatus.READY), any(Pageable.class));
         }
 
         @Test
         @DisplayName("유효한 cursor(1 이상)는 그대로 리포지토리에 넘긴다")
         void 유효한_cursor는_그대로_넘긴다() {
-            given(exhibitionRepository.findRecentIds(eq(5L), any(Pageable.class))).willReturn(List.of());
+            given(exhibitionRepository.findRecentIds(eq(5L), eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of());
 
             exhibitionService.getRecent(5L, 10, OWNER);
 
-            verify(exhibitionRepository).findRecentIds(eq(5L), any(Pageable.class));
+            verify(exhibitionRepository).findRecentIds(eq(5L), eq(ItemStatus.READY), any(Pageable.class));
         }
 
         @Test
@@ -516,7 +516,7 @@ class ExhibitionServiceTest {
             // 호출 빈도가 높습니다.
             Exhibition e = exhibitionWithId(3L, 2L, "공개 장식장");
 
-            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of(3L));
+            given(exhibitionRepository.findRecentIds(isNull(), eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
             givenPreviewItems(List.of(3L), List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
@@ -535,7 +535,7 @@ class ExhibitionServiceTest {
         void 다음_페이지가_있으면_hasNext를_채운다() {
             Exhibition newest = exhibitionWithId(3L, 2L, "최신");
 
-            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of(3L, 2L));
+            given(exhibitionRepository.findRecentIds(isNull(), eq(ItemStatus.READY), any(Pageable.class))).willReturn(List.of(3L, 2L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(newest));
             givenPreviewItems(List.of(3L), List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
