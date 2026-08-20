@@ -1,6 +1,8 @@
 package com.duckspace.domain.exhibition.entity;
 
 import com.duckspace.global.entity.BaseTimeEntity;
+import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
+import com.duckspace.global.exception.BusinessException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -13,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 장식장. 배경 위에 굿즈를 자유롭게 배치합니다.
@@ -35,6 +38,22 @@ public class Exhibition extends BaseTimeEntity {
 
     /** 테마를 고르지 않았을 때 쓰는 기본 배경. */
     public static final String DEFAULT_THEME_CODE = "BASIC";
+
+    /**
+     * 쓸 수 있는 배경 테마 코드.
+     *
+     * <p><b>프론트가 이 코드로 배경 이미지를 고릅니다.</b> 목록에 없는 값이 저장되면 서버는
+     * 200 을 주는데 화면에는 배경이 안 그려집니다 — 에러도 로그도 없어서, 사용자가
+     * "배경이 사라졌다" 고 할 때까지 아무도 모릅니다. 그래서 저장 시점에 막습니다.
+     *
+     * <p>값은 프론트 저장소 {@code src/components/displayThemes.js} 의 {@code DISPLAY_THEMES}
+     * 와 1:1 입니다(2026-08-20 확인). 배경 이미지를 추가하려면 <b>양쪽을 같이</b> 고쳐야 합니다 —
+     * 여기만 늘리면 프론트가 못 그리고, 프론트만 늘리면 여기서 400 이 납니다.
+     *
+     * <p>선언 순서는 프론트의 배경 순서와 같습니다(기본 → 보라 → 초록 → 노랑 → 주황 → 분홍 → 파랑).
+     */
+    public static final Set<String> THEME_CODES = Set.of(
+            DEFAULT_THEME_CODE, "PURPLE", "GREEN", "YELLOW", "ORANGE", "PINK", "BLUE");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,7 +78,22 @@ public class Exhibition extends BaseTimeEntity {
     public Exhibition(Long userId, String name, String themeCode) {
         this.userId = userId;
         this.name = name;
-        this.themeCode = (themeCode == null || themeCode.isBlank()) ? DEFAULT_THEME_CODE : themeCode;
+        this.themeCode = (themeCode == null || themeCode.isBlank())
+                ? DEFAULT_THEME_CODE
+                : validated(themeCode);
+    }
+
+    /**
+     * 목록에 없는 테마 코드를 막습니다.
+     *
+     * <p>생성과 수정이 모두 이 한 곳을 지나갑니다. DTO 에 검증을 걸면 시드 스크립트나
+     * 테스트처럼 컨트롤러를 안 타는 경로가 빠져나가서, 엔티티에 뒀습니다.
+     */
+    private static String validated(String themeCode) {
+        if (!THEME_CODES.contains(themeCode)) {
+            throw new BusinessException(ExhibitionErrorCode.INVALID_THEME_CODE);
+        }
+        return themeCode;
     }
 
     public boolean isOwnedBy(Long userId) {
@@ -70,9 +104,10 @@ public class Exhibition extends BaseTimeEntity {
         this.name = name;
     }
 
+    /** 비우면 기존 테마를 그대로 둡니다. 목록에 없는 코드는 거부합니다. */
     public void changeTheme(String themeCode) {
         if (themeCode != null && !themeCode.isBlank()) {
-            this.themeCode = themeCode;
+            this.themeCode = validated(themeCode);
         }
     }
 }
