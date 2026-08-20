@@ -2,6 +2,7 @@ package com.duckspace.domain.exhibition.image;
 
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.domain.exhibition.repository.GoodsImageRepository;
+import com.duckspace.domain.user.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -22,8 +23,8 @@ import java.util.concurrent.RejectedExecutionException;
  *
  * <h2>지우기 직전에 참조를 다시 확인합니다</h2>
  *
- * <p>같은 URL 을 보관함({@code goods_image})과 여러 굿즈({@code exhibition_item})가 공유할 수
- * 있습니다. "지워도 되는가" 판단을 호출부마다 두면 빼먹는 경로가 생기고(실제로 재시도 경로에서
+ * <p>같은 URL 을 보관함({@code goods_image}) · 여러 굿즈({@code exhibition_item}) ·
+ * 프로필 사진({@code users.profile_image_url})이 공유할 수 있습니다. "지워도 되는가" 판단을 호출부마다 두면 빼먹는 경로가 생기고(실제로 재시도 경로에서
  * 빠졌었습니다), 판단과 삭제 사이에 새 배치가 끼어드는 경합도 남습니다. 그래서 판단을 이 클래스
  * 한 곳으로 모으고, 시점도 <b>삭제 실행 직전(전용 실행기 안)</b>으로 고정합니다.
  *
@@ -44,15 +45,18 @@ public class ImageCleanup {
     private final ImageStorage imageStorage;
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final GoodsImageRepository goodsImageRepository;
+    private final UserRepository userRepository;
     private final Executor cleanupExecutor;
 
     public ImageCleanup(ImageStorage imageStorage,
                         ExhibitionItemRepository exhibitionItemRepository,
                         GoodsImageRepository goodsImageRepository,
+                        UserRepository userRepository,
                         @Qualifier("exhibitionCleanupExecutor") Executor cleanupExecutor) {
         this.imageStorage = imageStorage;
         this.exhibitionItemRepository = exhibitionItemRepository;
         this.goodsImageRepository = goodsImageRepository;
+        this.userRepository = userRepository;
         this.cleanupExecutor = cleanupExecutor;
     }
 
@@ -156,6 +160,9 @@ public class ImageCleanup {
         try {
             referenced = new HashSet<>(exhibitionItemRepository.findReferencedUrls(imageUrls));
             referenced.addAll(goodsImageRepository.findReferencedUrls(imageUrls));
+            // 프로필 사진도 참조입니다. 프론트가 프로필 사진을 게시글 이미지 업로드로 올려서,
+            // 여기서 안 보면 "글에 안 쓰인 이미지" 로 잡혀 파일만 사라집니다(깨진 아바타).
+            referenced.addAll(userRepository.findProfileImageUrlsIn(imageUrls));
         } catch (Exception e) {
             if (retriesLeft > 0) {
                 log.warn("참조 확인 실패, 배치를 다시 시도합니다 ({}건, 남은 시도 {}): {}",

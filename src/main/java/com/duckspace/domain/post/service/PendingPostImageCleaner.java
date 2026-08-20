@@ -1,9 +1,8 @@
 package com.duckspace.domain.post.service;
 
-import com.duckspace.domain.exhibition.image.ImageStorage;
+import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.post.entity.PendingPostImage;
 import com.duckspace.domain.post.repository.PendingPostImageRepository;
-import com.duckspace.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -13,14 +12,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
  * {@code POST /api/posts/images}로 올렸지만 글 작성까지 이어지지 않은 이미지를 주기적으로 지웁니다.
+ *
+ * <p><b>실제로 지울지는 {@link ImageCleanup} 이 정합니다.</b> 여기서 고르는 것은 "24시간이
+ * 지나도록 글에 안 담긴 것" 까지고, 그 URL 이 <b>다른 데서 쓰이고 있는지</b>(보관함 · 다른 굿즈 ·
+ * 프로필 사진)는 삭제 직전에 {@code ImageCleanup} 이 확인합니다. 판단을 여기에도 두면 참조
+ * 소스가 늘 때마다 두 곳을 고쳐야 합니다.
  *
  * <p>사용자가 사진만 올리고 글쓰기를 중간에 그만두면 저장소(S3/로컬)엔 파일이 남는데,
  * 이 시점엔 어느 Post도 참조하지 않아 exhibition의 {@code ImageCleanup}처럼 "행이 지워질 때
@@ -39,8 +40,7 @@ public class PendingPostImageCleaner {
     private static final int BATCH_SIZE = 200;
 
     private final PendingPostImageRepository pendingPostImageRepository;
-    private final UserRepository userRepository;
-    private final ImageStorage imageStorage;
+    private final ImageCleanup imageCleanup;
 
     @Scheduled(fixedRate = 1, initialDelay = 1, timeUnit = TimeUnit.HOURS)
     @Transactional
@@ -52,45 +52,19 @@ public class PendingPostImageCleaner {
             return;
         }
 
-        Set<String> claimed = claimedAsProfileImage(abandoned);
-
-        List<PendingPostImage> deletable = abandoned.stream()
-                .filter(image -> !claimed.contains(image.getImageUrl()))
-                .toList();
-
-        // imageStorage.deleteByUrl은 실패해도 내부에서 로그만 남기고 삼키므로 여기서 따로 감쌀 필요가 없습니다.
-        deletable.forEach(image -> imageStorage.deleteByUrl(image.getImageUrl()));
-
-        // 프로필로 쓰이는 것도 표시(행)는 지웁니다. 마커의 뜻이 "아직 아무 데도 안 쓰임" 인데
-        // 이미 쓰이고 있으니 남길 이유가 없고, 남기면 매시간 같은 행을 다시 집어옵니다.
-        // BATCH_SIZE 가 200 이라 그런 행이 배치를 채우면 진짜 고아 이미지가 영영 안 지워집니다.
+        // 표시(행)는 여기서 지웁니다. 뜻이 "아직 아무 데도 안 쓰임" 인데, 쓰이고 있든 아니든
+        // 24시간이 지난 시점에 이 표시는 더 볼 일이 없습니다. 남기면 매시간 같은 행을 다시
+        // 집어오고, BATCH_SIZE 가 200 이라 그런 행이 배치를 채우면 진짜 고아가 안 지워집니다.
         pendingPostImageRepository.deleteAll(abandoned);
 
-        if (!claimed.isEmpty()) {
-            log.info("프로필 사진으로 쓰이고 있어 {}건은 파일을 남겨둡니다.", claimed.size());
-        }
-        log.info("글 작성에 안 쓰인 업로드 이미지 {}건 정리", deletable.size());
-    }
-
-    /**
-     * 지우려는 것 중 <b>프로필 사진으로 쓰이고 있는</b> URL.
-     *
-     * <p>프론트가 프로필 사진을 전용 엔드포인트가 아니라 게시글 이미지 업로드로 올리고 있어서,
-     * 그대로 두면 "글에 안 쓰인 이미지" 로 잡혀 <b>24시간 뒤 파일이 사라집니다.</b>
-     * {@code users.profile_image_url} 은 남고 파일만 없어져 깨진 아바타가 됩니다.
-     *
-     * <p>업로드 경로를 고치는 대신 <b>지우기 직전에</b> 확인하는 이유는, 어떤 경로로 올라오든
-     * 같은 사고가 안 나게 하기 위해서입니다. {@code ImageCleanup#findReferencedUrls} 도
-     * 같은 방식으로 삭제 직전에 참조 여부를 봅니다.
-     */
-    private Set<String> claimedAsProfileImage(List<PendingPostImage> abandoned) {
-        List<String> urls = abandoned.stream()
+        // 파일 삭제는 ImageCleanup 에 맡깁니다. 여기서 직접 지우면 "지워도 되는가" 판단이
+        // 두 곳으로 갈라지고(프로필 사진처럼 뒤늦게 생긴 참조를 한쪽만 알게 됩니다),
+        // 트랜잭션 안에서 S3 를 최대 200번 왕복하게 됩니다.
+        // ImageCleanup 은 커밋 후 전용 실행기에서 돌며 참조 확인 실패 시 재시도까지 합니다.
+        imageCleanup.deleteAfterCommit(abandoned.stream()
                 .map(PendingPostImage::getImageUrl)
-                .filter(Objects::nonNull)
-                .toList();
-        if (urls.isEmpty()) {
-            return Set.of();
-        }
-        return new HashSet<>(userRepository.findProfileImageUrlsIn(urls));
+                .toList());
+
+        log.info("글 작성에 안 쓰인 업로드 이미지 {}건 정리 요청", abandoned.size());
     }
 }
