@@ -5,6 +5,7 @@ import com.duckspace.domain.post.dto.request.CasualPostRequest;
 import com.duckspace.domain.post.dto.request.ExchangePostRequest;
 import com.duckspace.domain.post.dto.request.OfferedItemRequest;
 import com.duckspace.domain.post.dto.request.WantedItemRequest;
+import com.duckspace.domain.post.dto.response.CasualPostSummaryResponse;
 import com.duckspace.domain.post.dto.response.ExchangePostSummaryResponse;
 import com.duckspace.domain.post.dto.response.PostDetailResponse;
 import com.duckspace.domain.post.entity.ExchangeApplication;
@@ -23,6 +24,7 @@ import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostImageRepository;
 import com.duckspace.domain.post.repository.PostLikeRepository;
 import com.duckspace.domain.post.repository.PostRepository;
+import com.duckspace.domain.post.repository.PostThumbnail;
 import com.duckspace.domain.post.repository.TradeItemRepository;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
@@ -36,11 +38,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -184,6 +188,61 @@ class PostServiceTest {
             postService.listCasual("치이카와", null, null, 42L);
 
             verify(postRepository).search(any(), any(), eq("치이카와"), eq(42L), any());
+        }
+
+        @Test
+        @DisplayName("대표 이미지를 thumbnailUrl 로 실어 보낸다 — 사진 없는 글은 null")
+        void 대표_이미지를_실어보낸다() {
+            // 이게 없어서 잡담 목록에 사진이 안 보였습니다. 프론트는 마이페이지에서만
+            // 카드마다 상세 API 를 불러 메우고 있었고(그것도 N+1), 잡담 목록엔 그 보완이
+            // 없어서 클릭 전까지 아무 사진도 없었습니다.
+            Post withImage = casualPost(1L, 10L);
+            Post withoutImage = casualPost(2L, 10L);
+
+            given(postRepository.search(any(), any(), any(), any(), any()))
+                    .willReturn(List.of(withImage, withoutImage));
+            given(userRepository.findNicknamesByIds(List.of(10L))).willReturn(Map.of(10L, "글쓴이"));
+            given(postImageRepository.findThumbnails(List.of(1L, 2L), PostImage.THUMBNAIL_SORT_ORDER))
+                    .willReturn(List.of(thumbnail(1L, "https://img/first.png")));
+
+            List<CasualPostSummaryResponse> result = postService.listCasual(null, null, null, null);
+
+            assertThat(result).extracting(CasualPostSummaryResponse::thumbnailUrl)
+                    .as("사진이 있는 글만 값이 차고, 없는 글은 null 이어야 합니다")
+                    .containsExactly("https://img/first.png", null);
+        }
+
+        @Test
+        @DisplayName("글이 몇 개든 이미지 조회는 한 번만 나간다")
+        void 이미지_조회는_한_번만() {
+            // 글마다 따로 조회하면 목록 크기만큼 쿼리가 나갑니다. 지금 프론트가 하고 있던
+            // 방식이 정확히 그것이라, 서버에서 같은 실수를 반복하지 않도록 못박습니다.
+            List<Post> posts = List.of(
+                    casualPost(1L, 10L), casualPost(2L, 10L), casualPost(3L, 11L));
+
+            given(postRepository.search(any(), any(), any(), any(), any())).willReturn(posts);
+            given(userRepository.findNicknamesByIds(any())).willReturn(Map.of(10L, "A", 11L, "B"));
+            given(postImageRepository.findThumbnails(any(), anyInt())).willReturn(List.of());
+
+            postService.listCasual(null, null, null, null);
+
+            verify(postImageRepository, times(1))
+                    .findThumbnails(List.of(1L, 2L, 3L), PostImage.THUMBNAIL_SORT_ORDER);
+            verify(postImageRepository, never()).findByPost_IdOrderBySortOrderAsc(any());
+        }
+
+        private PostThumbnail thumbnail(Long postId, String imageUrl) {
+            return new PostThumbnail() {
+                @Override
+                public Long getPostId() {
+                    return postId;
+                }
+
+                @Override
+                public String getImageUrl() {
+                    return imageUrl;
+                }
+            };
         }
     }
 

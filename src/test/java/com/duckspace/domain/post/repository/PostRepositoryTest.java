@@ -2,6 +2,7 @@ package com.duckspace.domain.post.repository;
 
 import com.duckspace.domain.post.entity.BoardType;
 import com.duckspace.domain.post.entity.Post;
+import com.duckspace.domain.post.entity.PostImage;
 import com.duckspace.global.config.JpaAuditingConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * search()의 JPQL where 절(특히 and/or 괄호 묶음)은 목(mock)으로는 검증되지 않습니다.
@@ -31,8 +33,15 @@ class PostRepositoryTest {
     @Autowired
     private PostRepository postRepository;
 
+    @Autowired
+    private PostImageRepository postImageRepository;
+
     private Post casual(Long userId, String content) {
         return entityManager.persist(Post.createCasual(userId, content));
+    }
+
+    private void image(Post post, String url, int sortOrder) {
+        entityManager.persist(new PostImage(post, url, sortOrder));
     }
 
     @Test
@@ -81,5 +90,39 @@ class PostRepositoryTest {
         List<Post> result = postRepository.search(BoardType.CASUAL, null, "치이카와", 1L, PageRequest.of(0, 20));
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("대표 이미지 배치 조회 — 글마다 sortOrder 0 한 장만, 여러 글을 한 번에")
+    void 대표_이미지_배치조회() {
+        // 목록 카드는 이미지를 한 장만 그립니다. 잡담 글은 최대 4장까지 붙을 수 있어서
+        // 전부 가져오면 쓰지도 않는 URL 이 응답을 네 배로 불립니다.
+        Post first = casual(1L, "사진 세 장");
+        image(first, "https://img/a-0.png", 0);
+        image(first, "https://img/a-1.png", 1);
+        image(first, "https://img/a-2.png", 2);
+
+        Post second = casual(2L, "사진 한 장");
+        image(second, "https://img/b-0.png", 0);
+
+        Post noImage = casual(3L, "사진 없음");
+        entityManager.flush();
+        entityManager.clear();
+
+        List<PostThumbnail> thumbnails = postImageRepository.findThumbnails(
+                List.of(first.getId(), second.getId(), noImage.getId()),
+                PostImage.THUMBNAIL_SORT_ORDER);
+
+        assertThat(thumbnails)
+                .as("사진 있는 글 두 개만, 각각 0번 한 장씩")
+                .extracting(PostThumbnail::getPostId, PostThumbnail::getImageUrl)
+                .containsExactlyInAnyOrder(
+                        tuple(first.getId(), "https://img/a-0.png"),
+                        tuple(second.getId(), "https://img/b-0.png"));
+
+        assertThat(thumbnails)
+                .as("사진 없는 글은 결과에 아예 없어야 서비스에서 thumbnailUrl 이 null 이 됩니다")
+                .extracting(PostThumbnail::getPostId)
+                .doesNotContain(noImage.getId());
     }
 }
