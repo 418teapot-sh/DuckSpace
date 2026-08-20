@@ -13,3 +13,11 @@ server:
   # nginx가 HTTPS를 종료하고 Spring에는 HTTP로 전달합니다.
   # 없으면 redirect_uri 등이 http://로 잘못 생성됩니다.
   forward-headers-strategy: framework
+
+# 제출 직전 공개 배포 서버에서 API 전체 스펙이 인증 없이 노출되는 걸 막습니다.
+# 로컬(application-local.yml)은 안 건드려서 개발 중엔 계속 열려 있습니다.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
