@@ -3,7 +3,8 @@
 > **덕질 굿즈를 수집·전시·교환하는 팬덤 공간 플랫폼의 백엔드 API 서버입니다.**
 > 굿즈 사진의 배경을 자동 제거해 나만의 "장식장"에 자유롭게 배치하고, 다른 유저와 굿즈를 교환하거나 이야기를 나눌 수 있습니다.
 
-* **🌐 Service Link**: [https://duckspace.cloud](https://duckspace.cloud)
+* **🌐 Service Link**: [https://duckspace.cloud](https://duckspace.cloud) *(백엔드 API 서버)*
+* **🖥️ Frontend**: [duck-space-frontend.vercel.app](https://duck-space-frontend.vercel.app) · [repo](https://github.com/Johminseo/DuckSpace-Frontend)
 * **📜 API Document (Swagger)**: [https://duckspace.cloud/swagger-ui.html](https://duckspace.cloud/swagger-ui.html)
 
 > ⚠️ 배포 환경의 Swagger 는 운영/시연 시점에 **비공개로 전환**될 수 있습니다.
@@ -42,6 +43,7 @@
 **🏪 팝업스토어 & 유저**
 
 * **팝업스토어**: 팝업 상세 정보 및 찜(좋아요), 관리자용 팝업 등록/수정/삭제
+* **AI 요약**: 팝업/배너 등록·수정 시 OpenAI로 일정·홍보 문구를 자동 요약해 저장 (`OpenAiSummaryClient`, `BannerSummaryClient`)
 * **유저 & 팔로우**: 프로필 관리, 유저 검색(최근 검색어 제공), 팔로우/팔로워 시스템
 
 ---
