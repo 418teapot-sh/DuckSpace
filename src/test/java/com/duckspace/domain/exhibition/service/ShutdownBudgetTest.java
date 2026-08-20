@@ -1,5 +1,7 @@
 package com.duckspace.domain.exhibition.service;
 
+import com.duckspace.domain.exhibition.image.RemoveBgClient;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +38,9 @@ class ShutdownBudgetTest {
      */
     private static final int RESERVED_FOR_REST_OF_SHUTDOWN = 10;
 
+    /** 처리된 이미지를 저장소에 올리는 왕복. remove.bg 예산과 달리 상수로 잡혀 있지 않아 여기 둡니다. */
+    private static final int S3_ROUND_TRIP_SECONDS = 30;
+
     @Test
     @DisplayName("두 실행기의 대기 시간 합이 systemd TimeoutStopSec 안에 들어간다")
     void 종료_예산을_넘지_않는다() throws IOException {
@@ -57,11 +62,17 @@ class ShutdownBudgetTest {
     @Test
     @DisplayName("이미지 대기 시간이 작업 하나의 최악보다 길다")
     void 작업_최악을_덮는다() {
-        // remove.bg 연결 10초 + 요청 60초 (RemoveBgClient) + S3 왕복 30초
-        int worstCaseWorkSeconds = 10 + 60 + 30;
+        // RemoveBgClient 의 상수를 직접 읽습니다. 예전에는 여기에 10 + 60 을 손으로 적어뒀는데,
+        // 그 사이 키 로테이션(#94)이 들어오면서 remove.bg 최악이 "시도당 70초 x 키 개수" 로
+        // 바뀌었는데도 이 테스트는 통과했습니다. 상수를 가져오면 그쪽이 바뀔 때 같이 걸립니다.
+        int worstCaseWorkSeconds = RemoveBgClient.TOTAL_BUDGET_SECONDS + S3_ROUND_TRIP_SECONDS;
 
         assertThat(ExhibitionAsyncConfig.IMAGE_AWAIT_SECONDS)
-                .as("여기가 더 짧으면 remove.bg 응답을 기다리던 스레드가 배포마다 잘립니다")
+                .as("""
+                        remove.bg 총 예산 %d초 + S3 왕복 %d초 = %d초 인데 대기가 %d초입니다.
+                        여기가 더 짧으면 remove.bg 응답을 기다리던 스레드가 배포마다 잘립니다."""
+                        .formatted(RemoveBgClient.TOTAL_BUDGET_SECONDS, S3_ROUND_TRIP_SECONDS,
+                                worstCaseWorkSeconds, ExhibitionAsyncConfig.IMAGE_AWAIT_SECONDS))
                 .isGreaterThanOrEqualTo(worstCaseWorkSeconds);
     }
 
