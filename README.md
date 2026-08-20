@@ -5,10 +5,9 @@
 
 * **🌐 Service Link**: [https://duckspace.cloud](https://duckspace.cloud) *(백엔드 API 서버)*
 * **🖥️ Frontend**: [duck-space-frontend.vercel.app](https://duck-space-frontend.vercel.app) · [repo](https://github.com/Johminseo/DuckSpace-Frontend)
-* **📜 API Document (Swagger)**: [https://duckspace.cloud/swagger-ui.html](https://duckspace.cloud/swagger-ui.html)
 
-> ⚠️ 배포 환경의 Swagger 는 운영/시연 시점에 **비공개로 전환**될 수 있습니다.
-> 로컬에서는 `http://localhost:8080/swagger-ui.html` 로 항상 열려 있습니다.
+> ⚠️ 배포 환경의 Swagger 는 제출을 앞두고 **비공개로 전환했습니다**(API 전체 스펙이 인증 없이
+> 노출되는 걸 막기 위함). 로컬에서는 `http://localhost:8080/swagger-ui.html` 로 항상 열려 있습니다.
 
 ---
 
