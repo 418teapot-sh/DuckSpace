@@ -51,7 +51,18 @@ public class JwtSecretGuard {
             return;
         }
 
-        if (COMMITTED_SECRETS.contains(properties.secret())) {
+        String secret = properties.secret();
+
+        // Set.of(...) 는 contains(null) 에서 NullPointerException 을 던집니다. 지금은 부팅 순서상
+        // 여기까지 null 이 오지 못하지만(jwt.secret 에 기본값이 없어 플레이스홀더 해석에서 먼저
+        // 실패합니다), 만약 오게 되면 아래의 친절한 메시지 대신 원인을 알 수 없는 NPE 스택트레이스가
+        // 남습니다. 한 줄로 막아둡니다.
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "jwt.secret 이 비어 있습니다. dev/prod 는 JWT_SECRET 환경변수로 주입해야 합니다.");
+        }
+
+        if (COMMITTED_SECRETS.contains(secret)) {
             throw new IllegalStateException("""
                     JWT_SECRET 이 저장소에 커밋된 값입니다. 이 키를 아는 사람은 누구나 토큰을 위조할 수 있습니다.
                     /etc/duckspace/app.env 의 JWT_SECRET 을 외부에 공개되지 않은 값으로 바꾸고 다시 배포하세요.
