@@ -23,6 +23,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     }
 
     /**
+     * 주어진 URL 중 <b>프로필 사진으로 쓰이고 있는 것</b>만 골라냅니다.
+     *
+     * <p>이미지를 지우기 전에 "아직 쓰이고 있나" 를 묻는 용도입니다. 프로필 사진이 게시글
+     * 이미지 업로드 경로로 올라오면 방치 이미지로 오인돼 지워지는데, 그걸 막습니다
+     * ({@code PendingPostImageCleaner}).
+     *
+     * <p>URL 마다 하나씩 묻지 않고 in 절로 묶습니다 — 정리 배치가 한 번에 200건까지 봅니다.
+     */
+    @Query("select u.profileImageUrl from User u where u.profileImageUrl in :imageUrls")
+    List<String> findProfileImageUrlsIn(@Param("imageUrls") Collection<String> imageUrls);
+
+    /**
      * 닉네임으로 유저를 찾습니다. {@code escape '\\'} 는 사용자가 입력한 {@code %} · {@code _} 가
      * 와일드카드로 동작하지 않도록 하기 위한 것입니다. 키워드는 서비스에서 이스케이프해서 넘깁니다.
      */
