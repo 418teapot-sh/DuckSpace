@@ -105,6 +105,11 @@ Flyway/Liquibase가 없고 `ddl-auto: update`만 씁니다. `update`는 **컬럼
 
 **대기중인 마이그레이션:** 없음.
 
+(2026-08-20 완료: `banner.popup_id` NOT NULL 해제, 프로덕션 실행 완료 — PR #109, 이슈 #108,
+순수 광고 배너(팝업 미연결) 허용. `ALTER TABLE banner MODIFY COLUMN popup_id BIGINT NULL;`
+실행 전엔 `popupId` 없이 배너를 만들면 `Column 'popup_id' cannot be null`로 500이 났음
+(RYU-TOMI가 PR #109 리뷰에서 실제로 재현·발견). 로컬 DB는 각자 필요할 때 반영.)
+
 (2026-08-17 완료: `exchange_detail.method` 컬럼 삭제, 로컬/프로덕션 둘 다 실행 완료 —
 `ALTER TABLE exchange_detail DROP COLUMN method;`. 실행 전엔 `POST /api/posts/exchange`가
 매번 `Field 'method' doesn't have a default value`로 실패했음.)

@@ -9,7 +9,8 @@ public record BannerUpdateRequest(
         @NotBlank String imageUrl,
         @NotBlank String title,
         String description,
-        @NotNull Long popupId,
+        /** 없으면 팝업과 무관한 순수 광고 배너로 저장된다(클릭해도 이동 없음). */
+        Long popupId,
         @NotNull LocalDateTime startAt,
         @NotNull LocalDateTime endAt,
         int sortOrder,
