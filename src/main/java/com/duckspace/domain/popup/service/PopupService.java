@@ -11,6 +11,7 @@ import com.duckspace.domain.popup.repository.PopupLikeRepository;
 import com.duckspace.domain.popup.repository.PopupRepository;
 import com.duckspace.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -40,8 +42,12 @@ public class PopupService {
 
     /** 홈 화면 "다가오는 팝업" 섹션용 — 종료된 팝업은 제외합니다. */
     public List<PopupSummaryResponse> getUpcomingPopups(Long viewerId) {
+        LocalDate today = LocalDate.now(ServiceZone.ZONE);
+        log.info("[DEBUG-TMP] getUpcomingPopups today={}", today);
         List<Popup> popups = popupRepository
-                .findAllByEndDateGreaterThanEqualOrderByStartDateAsc(LocalDate.now(ServiceZone.ZONE));
+                .findAllByEndDateGreaterThanEqualOrderByStartDateAsc(today);
+        log.info("[DEBUG-TMP] getUpcomingPopups result ids={}",
+                popups.stream().map(Popup::getId).toList());
         Set<Long> likedIds = likedPopupIds(viewerId, popups);
         return popups.stream()
                 .map(popup -> PopupSummaryResponse.from(popup, likedIds.contains(popup.getId())))
