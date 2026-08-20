@@ -10,6 +10,7 @@ import com.duckspace.domain.exhibition.entity.ExhibitionItem;
 import com.duckspace.domain.exhibition.entity.ItemStatus;
 import com.duckspace.domain.exhibition.exception.ExhibitionErrorCode;
 import com.duckspace.domain.exhibition.image.ImageCleanup;
+import com.duckspace.domain.exhibition.image.ImageStorage;
 import com.duckspace.domain.exhibition.image.MultipartImageValidator;
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.global.exception.BusinessException;
@@ -37,6 +38,7 @@ public class ExhibitionItemService {
     private final ExhibitionItemRepository exhibitionItemRepository;
     private final ExhibitionService exhibitionService;
     private final ImageCleanup imageCleanup;
+    private final ImageStorage imageStorage;
     private final ApplicationEventPublisher eventPublisher;
 
     /**
@@ -47,12 +49,41 @@ public class ExhibitionItemService {
     @Transactional
     public ExhibitionItemResponse add(Long exhibitionId, Long userId, AddItemRequest request) {
         Exhibition exhibition = exhibitionService.getOwnedExhibition(exhibitionId, userId);
+        requireOurStorageUrl(request.imageUrl());
 
         ExhibitionItem item = new ExhibitionItem(
                 exhibition, request.placement().toPlacement(), request.imageUrl(),
                 request.itemName(), request.price(), request.comment(), ItemStatus.READY);
 
         return ExhibitionItemResponse.from(exhibitionItemRepository.save(item));
+    }
+
+    /**
+     * 우리 저장소에 올린 사진인지 확인합니다.
+     *
+     * <p>예전에는 {@code @NotBlank @Size(max = 500)} 만 봤습니다. 그래서 아무 문자열이나
+     * 들어왔고, 그 값이 <b>프론트에서 그대로 {@code <img src>} 로 렌더링</b>됩니다:
+     *
+     * <ul>
+     *   <li>{@code javascript:} · {@code data:} 같은 스킴</li>
+     *   <li>외부 주소 — 장식장을 보는 사람의 브라우저가 그 서버로 요청을 보냅니다.
+     *       추적 픽셀을 심거나, 남의 서버로 트래픽을 유도할 수 있습니다</li>
+     *   <li>우리가 지운 뒤에도 계속 살아 있는 주소</li>
+     * </ul>
+     *
+     * <p>{@link ImageStorage#keyOf} 는 우리 저장소의 공개 base URL 로 시작하는 주소에만
+     * key 를 돌려주므로, 그 결과가 {@code null} 이면 우리 것이 아닙니다.
+     *
+     * <p><b>이 검사는 "우리 저장소인지" 까지만 봅니다 — "누구 것인지" 는 아직 안 봅니다.</b>
+     * 남의 사진 주소를 자기 장식장에 넣는 것은 여전히 가능합니다(공개 피드에 굿즈 주소가
+     * 그대로 나가므로 알아내기도 쉽습니다). 다만 삭제 악용은 {@code ImageCleanup} 이
+     * 참조를 확인하고 지우므로 원래 주인의 파일은 남습니다. 소유 검증은 시드 도구가
+     * 쓰는 키 경로와 함께 정리해야 해서 후속으로 미룹니다 (#68 의 D-01).
+     */
+    private void requireOurStorageUrl(String imageUrl) {
+        if (imageStorage.keyOf(imageUrl) == null) {
+            throw new BusinessException(ExhibitionErrorCode.IMAGE_URL_NOT_ALLOWED);
+        }
     }
 
     /**
