@@ -33,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -53,6 +54,9 @@ class ExhibitionItemServiceTest {
 
     @Mock
     private com.duckspace.domain.exhibition.image.ImageCleanup imageCleanup;
+
+    @Mock
+    private com.duckspace.domain.exhibition.image.ImageStorage imageStorage;
 
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
@@ -86,8 +90,14 @@ class ExhibitionItemServiceTest {
     @DisplayName("add 메서드는")
     class Add {
 
+        /** add 는 우리 저장소 주소인지 먼저 확인합니다. 그 판정만 통과시켜 둡니다. */
+        private void ourStorage() {
+            given(imageStorage.keyOf(anyString())).willReturn("exhibitions/10/x.png");
+        }
+
         @Test
         void 좌표와_크기를_그대로_저장한다() {
+            ourStorage();
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
                     .willAnswer(inv -> {
@@ -107,7 +117,45 @@ class ExhibitionItemServiceTest {
         }
 
         @Test
+        @DisplayName("우리 저장소가 아닌 주소는 400 으로 막는다")
+        void 외부_주소는_거부() {
+            // 이 값은 프론트에서 그대로 <img src> 로 렌더링됩니다. 아무 문자열이나 받으면
+            // 장식장을 보는 사람의 브라우저가 남의 서버로 요청을 보내게 됩니다.
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(imageStorage.keyOf(anyString())).willReturn(null);   // 우리 것이 아님
+
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> exhibitionItemService.add(EXHIBITION_ID, OWNER, addRequest()));
+
+            assertThat(exception.getErrorCode())
+                    .isEqualTo(ExhibitionErrorCode.IMAGE_URL_NOT_ALLOWED);
+            verify(exhibitionItemRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("시드 스크립트가 쓰는 주소도 통과한다")
+        void 시드_주소는_통과() {
+            // 시연 데이터를 넣는 duckspace-seed 는 uploads/seed/ 아래 파일을 씁니다.
+            // 소유자별 경로가 아니라서, 소유 검증까지 넣으면 여기서 막힙니다 — 지금은
+            // "우리 저장소인지" 만 보므로 통과해야 합니다. 이 테스트가 깨지면 시연 시드가
+            // 통째로 400 이 됩니다.
+            given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
+            given(imageStorage.keyOf("http://localhost:8080/uploads/seed/plushie-a1b2.png"))
+                    .willReturn("seed/plushie-a1b2.png");
+            given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
+                    .willAnswer(inv -> inv.getArgument(0));
+
+            ExhibitionItemResponse response = exhibitionItemService.add(EXHIBITION_ID, OWNER,
+                    new AddItemRequest(new PlacementRequest(0.1, 0.2, 0.3, 0.3, null),
+                            "http://localhost:8080/uploads/seed/plushie-a1b2.png", "굿즈", null, null));
+
+            assertThat(response.imageUrl())
+                    .isEqualTo("http://localhost:8080/uploads/seed/plushie-a1b2.png");
+        }
+
+        @Test
         void 회전_각도를_그대로_저장한다() {
+            ourStorage();
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
                     .willAnswer(inv -> inv.getArgument(0));
@@ -123,6 +171,7 @@ class ExhibitionItemServiceTest {
         @Test
         void 회전을_보내지_않으면_0으로_저장한다() {
             // 회전 기능이 생기기 전에 만들어진 화면이 그대로 동작해야 합니다.
+            ourStorage();
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.save(any(ExhibitionItem.class)))
                     .willAnswer(inv -> inv.getArgument(0));
@@ -138,6 +187,7 @@ class ExhibitionItemServiceTest {
 
         @Test
         void 자유_배치라_위치가_겹쳐도_막지_않는다() {
+            ourStorage();
             given(exhibitionService.getOwnedExhibition(EXHIBITION_ID, OWNER)).willReturn(exhibition);
             given(exhibitionItemRepository.save(any(ExhibitionItem.class))).willReturn(item(7L));
 

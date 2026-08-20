@@ -15,15 +15,22 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
  * remove.bg 배경 제거 클라이언트.
  *
- * <p><b>무료 플랜은 월 50회, 0.25MP(preview) 로 제한됩니다.</b> {@code size} 를 {@code auto} 나
+ * <p><b>무료 플랜은 계정당 월 50회, 0.25MP(preview) 로 제한됩니다.</b> {@code size} 를 {@code auto} 나
  * {@code full} 로 보내면 크레딧을 소모하며, 크레딧이 없으면 402 로 실패합니다.
  * 그래서 기본값이 {@code preview} 입니다.
+ *
+ * <p>서로 다른 계정에서 발급받은 키를 여러 개({@code removebg.api-keys}) 등록할 수 있습니다.
+ * 한 키가 크레딧을 소진(402)하거나 무효(403)해지면 다음 키로 자동 전환합니다. 그 외 상태코드는
+ * 로테이션 대상이 아닙니다 — 다른 키로 바꿔도 풀리지 않는 문제라서 즉시 실패시킵니다.
  *
  * <p>키가 없으면 {@link #isEnabled()} 가 false 를 돌려주고, 호출부는 배경 제거를 건너뜁니다.
  * 키 없는 팀원도 나머지 기능을 개발할 수 있어야 하기 때문입니다.
@@ -32,7 +39,12 @@ import java.util.regex.Pattern;
 @Component
 public class RemoveBgClient {
 
-    private static final String ENDPOINT = "https://api.remove.bg/v1.0/removebg";
+    /**
+     * 테스트에서 {@code removebg.endpoint} 로 로컬 스텁 서버를 대신 붙일 수 있도록 설정값으로
+     * 뺐습니다. 실제 remove.bg 를 부르지 않고는 로테이션 분기(402/403 전환, 다른 코드는
+     * 즉시 실패)를 검증할 방법이 없었기 때문입니다.
+     */
+    private static final String DEFAULT_ENDPOINT = "https://api.remove.bg/v1.0/removebg";
 
     /** 파일명에 허용할 문자. 나머지는 전부 {@code _} 로 바꿉니다. */
     private static final Pattern UNSAFE_FILENAME_CHARS = Pattern.compile("[^A-Za-z0-9._-]");
@@ -48,65 +60,168 @@ public class RemoveBgClient {
      */
     private static final int ERROR_BODY_LOG_LIMIT = 512;
 
-    private final String apiKey;
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * <b>키를 몇 개 등록하든 remove.bg 에 쓰는 총 시간.</b> 이 값이 곧 종료 대기 예산의 근거입니다.
+     *
+     * <p>타임아웃은 <b>시도마다</b> 다시 걸립니다(연결 10초 + 요청 60초 = 70초). 그래서 상한이
+     * 시도 횟수에 비례합니다 — 키가 6개면 최악 420초입니다. 그 사이 배포가 시작되면 systemd 가
+     * {@code TimeoutStopSec} 에서 <b>SIGKILL</b> 을 보내 처리 중이던 사진이 깨집니다.
+     * {@code ExhibitionAsyncConfig.IMAGE_AWAIT_SECONDS} 가 막으려던 바로 그 상황입니다.
+     *
+     * <p>덮으려고 대기 시간을 올리는 건 답이 아닙니다 — 420초를 덮으려면 <b>배포 한 번이 8분씩</b>
+     * 걸립니다({@code systemctl restart} 가 끝나야 헬스체크로 넘어갑니다).
+     *
+     * <p>그래서 <b>호출 전체</b>에 마감을 둡니다. 로테이션은 이 예산 안에서 best-effort 이고,
+     * 키가 몇 개든 최악은 여기 적힌 값으로 고정됩니다. 402 는 크레딧 확인이라 보통 즉시 오므로
+     * 실제로는 키를 다 돌 시간이 남고, 정말 느린 날에만 중간에 끊깁니다. 그때는 원본 폴백이라
+     * 배경이 남은 사진이 저장되는데, <b>배포 중 SIGKILL 로 사진이 깨지는 것보다 낫습니다.</b>
+     *
+     * <p>{@code ShutdownBudgetTest} 가 이 값을 직접 읽어 종료 대기 시간과 대조합니다.
+     * (PR #95 리뷰 — 예산 계산이 키 로테이션을 반영하지 못하던 것)
+     *
+     * <p>{@code endpoint} 와 마찬가지로 설정({@code removebg.total-budget-seconds})으로 덮을 수
+     * 있습니다. 예산 초과 경로는 <b>실제로 느릴 때만</b> 도는 코드라, 테스트에서 0 을 넣지 않으면
+     * 70초를 기다려야 검증됩니다. {@code application.yml} 에는 넣지 않았습니다 — 이 값을 바꾸면
+     * 종료 대기 예산의 근거가 흔들리므로, 바꿀 일이 생기면 여기와 같이 봐야 합니다.
+     */
+    public static final int TOTAL_BUDGET_SECONDS = 70;
+
+    private final List<String> apiKeys;
     private final String size;
+    private final String endpoint;
+    private final int totalBudgetSeconds;
     private final HttpClient http;
 
-    public RemoveBgClient(@Value("${removebg.api-key:}") String apiKey,
-                          @Value("${removebg.size:preview}") String size) {
-        this.apiKey = apiKey == null ? "" : apiKey.trim();
+    /** 다음 호출에 쓸 키의 인덱스. 402/403 을 받으면 다음 키로 넘어갑니다. */
+    private final AtomicInteger currentIndex = new AtomicInteger(0);
+
+    public RemoveBgClient(@Value("${removebg.api-keys:}") String apiKeysRaw,
+                          // removebg.api-key 는 removebg.api-keys 로 이름이 바뀌었습니다. 옛날 이름만
+                          // 설정된 환경(서버 app.env, 팀원 로컬 .env)이 배경 제거가 조용히 꺼지는 걸
+                          // 막기 위한 폴백입니다. 모든 환경이 새 이름으로 옮겨가면 지워도 됩니다.
+                          @Value("${removebg.api-key:}") String legacySingleKey,
+                          @Value("${removebg.size:preview}") String size,
+                          @Value("${removebg.endpoint:" + DEFAULT_ENDPOINT + "}") String endpoint,
+                          @Value("${removebg.total-budget-seconds:" + TOTAL_BUDGET_SECONDS + "}")
+                          int totalBudgetSeconds) {
+        String rawKeys = apiKeysRaw == null ? "" : apiKeysRaw;
+        String legacyKey = legacySingleKey == null ? "" : legacySingleKey;
+        String effectiveRaw = rawKeys.isBlank() ? legacyKey : rawKeys;
+
+        if (rawKeys.isBlank() && !legacyKey.isBlank()) {
+            log.warn("removebg.api-key(REMOVEBG_API_KEY) 는 removebg.api-keys(REMOVEBG_API_KEYS) 로 "
+                    + "바뀌었습니다. 예전 이름으로 동작 중이니 옮겨주세요.");
+        }
+
+        this.apiKeys = Arrays.stream(effectiveRaw.split(","))
+                .map(String::trim)
+                .filter(key -> !key.isBlank())
+                .toList();
         this.size = size;
+        this.endpoint = endpoint;
+        this.totalBudgetSeconds = totalBudgetSeconds;
         this.http = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(CONNECT_TIMEOUT)
                 .build();
 
         if (!isEnabled()) {
-            log.warn("REMOVEBG_API_KEY 가 없어 배경 제거를 건너뜁니다. 업로드한 사진이 그대로 저장됩니다.");
+            log.warn("REMOVEBG_API_KEYS 가 없어 배경 제거를 건너뜁니다. 업로드한 사진이 그대로 저장됩니다.");
         }
     }
 
     public boolean isEnabled() {
-        return !apiKey.isBlank();
+        return !apiKeys.isEmpty();
     }
 
     /**
      * 배경을 제거한 이미지를 반환합니다.
      *
-     * @throws IOException API 호출이나 응답 해석에 실패한 경우
+     * <p>키가 여러 개 등록돼 있으면 402(크레딧 소진)나 403(인증 실패)을 받을 때마다 다음 키로
+     * 넘어가 재시도합니다. 등록된 키를 전부 소진/실패하면 예외를 던지고, 호출부
+     * ({@code ExhibitionImageProcessor})가 원본 이미지로 폴백합니다.
+     *
+     * @throws IOException API 호출이나 응답 해석에 실패한 경우 (모든 키 소진 포함)
      */
     public BufferedImage removeBackground(byte[] imageBytes, String fileName)
             throws IOException, InterruptedException {
 
+        if (apiKeys.isEmpty()) {
+            throw new IOException("등록된 remove.bg 키가 없습니다.");
+        }
+
         // boundary 를 요청마다 새로 뽑습니다. 고정값이면 업로드된 바이트 안에 같은 문자열을
-        // 심어 파트 경계를 위조할 수 있습니다.
+        // 심어 파트 경계를 위조할 수 있습니다. 키를 바꿔 재시도해도 바디는 동일하므로 한 번만 만듭니다.
         String boundary = "----DuckSpace" + UUID.randomUUID().toString().replace("-", "");
+        byte[] body = buildBody(boundary, imageBytes, fileName);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(ENDPOINT))
-                .header("X-Api-Key", apiKey)
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .timeout(Duration.ofSeconds(60))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(buildBody(boundary, imageBytes, fileName)))
-                .build();
+        IOException lastFailure = null;
 
-        HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        // 호출 전체의 마감. 시도마다 타임아웃이 새로 걸리므로, 이게 없으면 상한이 키 개수에
+        // 비례합니다(TOTAL_BUDGET_SECONDS 주석 참고).
+        long deadlineNanos = System.nanoTime()
+                + Duration.ofSeconds(totalBudgetSeconds).toNanos();
 
-        // 남은 호출량 파악에 필요합니다. 무료 플랜은 월 50회뿐이라 로그로 남겨둡니다.
-        response.headers().firstValue("X-Credits-Charged")
-                .ifPresent(charged -> log.info("remove.bg 크레딧 사용: {}", charged));
+        for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
+            if (attempt > 0 && System.nanoTime() >= deadlineNanos) {
+                log.info("remove.bg 총 예산 {}초를 넘겨 남은 키를 시도하지 않습니다. ({}/{} 시도)",
+                        totalBudgetSeconds, attempt, apiKeys.size());
+                break;
+            }
 
-        if (response.statusCode() != 200) {
+            int keyIndex = currentIndex.get();
+            String key = apiKeys.get(keyIndex);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("X-Api-Key", key)
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .timeout(REQUEST_TIMEOUT)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                    .build();
+
+            HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+            // 남은 호출량 파악에 필요합니다. 무료 플랜은 계정당 월 50회뿐이라 로그로 남겨둡니다.
+            response.headers().firstValue("X-Credits-Charged")
+                    .ifPresent(charged -> log.info("remove.bg 키 #{} 크레딧 사용: {}", keyIndex, charged));
+
+            if (response.statusCode() == 200) {
+                // 응답도 픽셀 수 제한을 거쳐 디코딩합니다. 우리가 부른 API 라도 가드를 건너뛰면,
+                // 이쪽이 실사용 경로(키가 있는 배포 환경)라서 보호가 사실상 없는 것과 같습니다.
+                try {
+                    return ImageInspector.read(response.body());
+                } catch (UncheckedIOException e) {
+                    throw new IOException("remove.bg 응답을 이미지로 읽지 못했습니다.", e.getCause());
+                }
+            }
+
+            if (response.statusCode() == 402) {
+                log.info("remove.bg 키 #{} 크레딧 소진, 다음 키로 전환합니다.", keyIndex);
+                currentIndex.compareAndSet(keyIndex, (keyIndex + 1) % apiKeys.size());
+                lastFailure = new IOException("remove.bg 키 #%d 크레딧 소진".formatted(keyIndex));
+                continue;
+            }
+
+            if (response.statusCode() == 403) {
+                log.error("remove.bg 키 #{} 인증 실패(오타/만료/정지 의심) — 키 확인이 필요합니다. 다음 키로 전환합니다.",
+                        keyIndex);
+                currentIndex.compareAndSet(keyIndex, (keyIndex + 1) % apiKeys.size());
+                lastFailure = new IOException("remove.bg 키 #%d 인증 실패".formatted(keyIndex));
+                continue;
+            }
+
+            // 429(분당 요청 한도 초과)도 여기로 떨어져 로테이션하지 않습니다. remove.bg 가 이
+            // 한도를 키 단위로 매기는지 IP 단위로 매기는지 확인하지 못했습니다 — IP 단위라면
+            // 키를 바꿔도 안 풀리고, 키 단위라면 402/403 처럼 로테이션 대상이어야 합니다.
+            // 확인 전까지는 보수적으로 즉시 실패시킵니다.
             throw new IOException("remove.bg 호출 실패 (HTTP %d): %s".formatted(
                     response.statusCode(), summarize(response.body())));
         }
 
-        // 응답도 픽셀 수 제한을 거쳐 디코딩합니다. 우리가 부른 API 라도 가드를 건너뛰면,
-        // 이쪽이 실사용 경로(키가 있는 배포 환경)라서 보호가 사실상 없는 것과 같습니다.
-        try {
-            return ImageInspector.read(response.body());
-        } catch (UncheckedIOException e) {
-            throw new IOException("remove.bg 응답을 이미지로 읽지 못했습니다.", e.getCause());
-        }
+        throw lastFailure;
     }
 
     private byte[] buildBody(String boundary, byte[] imageBytes, String fileName) throws IOException {

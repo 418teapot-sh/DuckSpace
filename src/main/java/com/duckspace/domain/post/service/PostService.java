@@ -22,6 +22,7 @@ import com.duckspace.domain.post.repository.ExchangeDetailRepository;
 import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import com.duckspace.domain.post.repository.PostHashtagRepository;
 import com.duckspace.domain.post.repository.PostIdCount;
+import com.duckspace.domain.post.repository.PostThumbnail;
 import com.duckspace.domain.post.repository.PostImageRepository;
 import com.duckspace.domain.post.repository.PostLikeRepository;
 import com.duckspace.domain.post.repository.PostRepository;
@@ -86,6 +87,7 @@ public class PostService {
         Map<Long, Long> likeCounts = batchLikeCounts(postIds);
         Map<Long, Long> commentCounts = batchCommentCounts(postIds);
         Map<Long, String> nicknames = batchNicknames(posts);
+        Map<Long, String> thumbnails = batchThumbnails(postIds);
 
         return posts.stream()
                 .map(post -> new CasualPostSummaryResponse(
@@ -95,7 +97,8 @@ public class PostService {
                         nicknames.get(post.getUserId()),
                         post.getCreatedAt(),
                         likeCounts.getOrDefault(post.getId(), 0L),
-                        commentCounts.getOrDefault(post.getId(), 0L)))
+                        commentCounts.getOrDefault(post.getId(), 0L),
+                        thumbnails.get(post.getId())))
                 .toList();
     }
 
@@ -387,6 +390,20 @@ public class PostService {
     private Map<Long, Long> batchCommentCounts(List<Long> postIds) {
         return commentRepository.countByPostIdIn(postIds).stream()
                 .collect(Collectors.toMap(PostIdCount::getPostId, PostIdCount::getCount));
+    }
+
+    /**
+     * 목록 카드에 쓸 대표 이미지를 한 번에 모읍니다. 사진이 없는 글은 결과에 없어서
+     * {@code thumbnails.get(postId)} 가 그대로 null 이 됩니다.
+     */
+    private Map<Long, String> batchThumbnails(List<Long> postIds) {
+        return postImageRepository.findThumbnails(postIds, PostImage.THUMBNAIL_SORT_ORDER).stream()
+                .collect(Collectors.toMap(
+                        PostThumbnail::getPostId,
+                        PostThumbnail::getImageUrl,
+                        // 한 글에 sortOrder 0 이 둘일 수 없지만, 그런 데이터가 생겨도
+                        // toMap 이 IllegalStateException 으로 목록 전체를 죽이지 않게 둡니다.
+                        (first, ignored) -> first));
     }
 
     private Map<Long, String> batchNicknames(List<Post> posts) {

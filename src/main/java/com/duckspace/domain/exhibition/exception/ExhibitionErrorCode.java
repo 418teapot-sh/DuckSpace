@@ -9,8 +9,11 @@ public enum ExhibitionErrorCode implements BaseErrorCode {
 
     EXHIBITION_NOT_FOUND(HttpStatus.NOT_FOUND, "장식장을 찾을 수 없습니다."),
     NOT_EXHIBITION_OWNER(HttpStatus.FORBIDDEN, "본인의 장식장만 수정할 수 있습니다."),
+    INVALID_THEME_CODE(HttpStatus.BAD_REQUEST, "사용할 수 없는 배경 테마입니다."),
     ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "전시된 굿즈를 찾을 수 없습니다."),
     EMPTY_IMAGE(HttpStatus.BAD_REQUEST, "이미지 파일이 비어 있습니다."),
+    IMAGE_URL_NOT_ALLOWED(HttpStatus.BAD_REQUEST,
+            "이 서비스에 올린 사진만 배치할 수 있습니다. 사진을 먼저 업로드해주세요."),
     UNSUPPORTED_IMAGE_TYPE(HttpStatus.BAD_REQUEST, "JPG 또는 PNG 이미지만 올릴 수 있습니다."),
     IMAGE_DIMENSION_TOO_LARGE(HttpStatus.BAD_REQUEST,
             "이미지 크기가 너무 큽니다. 4천만 화소 이하로 줄여서 올려주세요."),

@@ -91,15 +91,47 @@ public interface ExhibitionItemRepository extends JpaRepository<ExhibitionItem, 
     List<String> findImageUrlsByExhibitionId(@Param("exhibitionId") Long exhibitionId);
 
     /**
-     * 목록 카드 미리보기용 — 장식장별 배치된 굿즈 <b>전체</b>를 한 번에 가져옵니다
-     * (장식장마다 따로 조회하면 N+1). {@code exhibition.id asc, id asc} 순으로 반환해서
+     * 목록 카드 미리보기용 — <b>장식장마다 앞에서 {@code perExhibition} 개</b>의 굿즈 id 만 고릅니다.
+     *
+     * <p>예전에는 굿즈를 <b>전부</b> 가져온 뒤 자바에서 잘랐습니다. 응답 크기는 잡혔지만
+     * DB 와 영속성 컨텍스트에는 그대로 다 올라왔습니다 — 굿즈 개수에 상한이 없어서, 한 장식장에
+     * 2만 개가 쌓이면 <b>토큰 없는 요청 하나가 2만 엔티티</b>를 로드했습니다. 이 경로 상당수가
+     * 인증 없이 열려 있어 반복 호출도 자유롭습니다.
+     *
+     * <p>그래서 상한을 SQL 로 내렸습니다. 자르는 지점이 한 곳뿐이라 자바 쪽에는 {@code limit} 이
+     * 없습니다 — 여기를 고치면 그대로 상한이 바뀝니다.
+     *
+     * <p>JPQL 은 그룹별 상한을 표현하지 못해 네이티브 쿼리를 씁니다({@code row_number()} 윈도우
+     * 함수, MySQL 8 이상). 엔티티가 아니라 <b>id 만</b> 돌려주고, 실제 조회는
+     * {@link #findAllByIdsOrdered} 가 합니다 — 파생 테이블의 {@code rn} 컬럼이 엔티티 매핑에
+     * 섞이지 않도록 하기 위해서입니다.
+     *
+     * @param status {@link ItemStatus} 의 이름. 컬럼이 varchar 라 문자열로 넘깁니다
+     */
+    @Query(value = """
+            select t.id from (
+                select i.id as id,
+                       row_number() over (partition by i.exhibition_id order by i.id asc) as rn
+                from exhibition_item i
+                where i.exhibition_id in (:exhibitionIds) and i.status = :status
+            ) t
+            where t.rn <= :perExhibition
+            """, nativeQuery = true)
+    List<Long> findPreviewItemIds(@Param("exhibitionIds") Collection<Long> exhibitionIds,
+                                  @Param("status") String status,
+                                  @Param("perExhibition") int perExhibition);
+
+    /**
+     * id 목록으로 굿즈를 가져옵니다. {@code exhibition.id asc, id asc} 순이라
      * 상세 화면과 같은 순서로 그릴 수 있습니다.
+     *
+     * <p>{@link #findPreviewItemIds} 가 고른 id 를 받는 용도입니다. 장식장마다 따로 조회하면
+     * N+1 이라 한 번에 가져옵니다.
      */
     @Query("""
             select i from ExhibitionItem i
-            where i.exhibition.id in :exhibitionIds and i.status = :status
+            where i.id in :ids
             order by i.exhibition.id asc, i.id asc
             """)
-    List<ExhibitionItem> findAllByExhibitionIdsAndStatus(@Param("exhibitionIds") Collection<Long> exhibitionIds,
-                                                          @Param("status") ItemStatus status);
+    List<ExhibitionItem> findAllByIdsOrdered(@Param("ids") Collection<Long> ids);
 }

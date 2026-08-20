@@ -158,15 +158,24 @@ public class ExhibitionService {
         return toSummaries(ids, viewerId).get(0);
     }
 
-    /** 홈 화면 "인기 전시장". 좋아요가 많은 순입니다. */
+    /**
+     * 홈 화면 "인기 전시장". 좋아요가 많은 순입니다.
+     *
+     * <p>{@link #getRecent} 와 마찬가지로 <b>굿즈가 하나도 없는 장식장은 빠집니다.</b>
+     * 발견 화면이라 그림 없는 카드를 보여줄 이유가 없습니다.
+     */
     public List<ExhibitionSummaryResponse> getPopular(Integer limit, Long viewerId) {
-        List<Long> ids = exhibitionRepository.findPopularIds(
+        List<Long> ids = exhibitionRepository.findPopularIds(ItemStatus.READY,
                 PageRequest.of(0, Paging.normalize(limit, DEFAULT_LIMIT, MAX_LIMIT)));
         return toSummaries(ids, viewerId);
     }
 
     /**
-     * 검색 탭 기본 화면의 장식장 피드. 필터 없이 최신 등록순 커서 페이징입니다.
+     * 검색 탭 기본 화면의 장식장 피드. 최신 등록순 커서 페이징입니다.
+     *
+     * <p><b>굿즈가 하나도 없는 장식장은 빠집니다.</b> 가입할 때마다 기본 장식장이 자동으로
+     * 생기는데, 거르지 않으면 첫 페이지가 빈 카드로 도배됩니다. 거르는 곳이 쿼리인 이유와
+     * 내 장식장 목록에는 왜 안 거는지는 {@code ExhibitionRepository#findRecentIds} 참고.
      *
      * <p>{@code cursor} 가 0 이하면 첫 페이지로 취급합니다 — 장식장 id 는 1부터 시작해서,
      * 0 이하를 그대로 리포지토리에 넘기면 데이터가 있어도 빈 목록이 나옵니다. 정상 흐름
@@ -179,7 +188,7 @@ public class ExhibitionService {
         Pageable pageable = PageRequest.of(0, pageSize + 1);
         Long normalizedCursor = (cursor == null || cursor <= 0) ? null : cursor;
 
-        List<Long> found = exhibitionRepository.findRecentIds(normalizedCursor, pageable);
+        List<Long> found = exhibitionRepository.findRecentIds(normalizedCursor, ItemStatus.READY, pageable);
 
         Paging.Slice<Long> sliced = Paging.slice(found, pageSize, id -> id);
         return new ExhibitionSummaryPageResponse(
@@ -254,28 +263,38 @@ public class ExhibitionService {
         Map<Long, Exhibition> exhibitions = exhibitionRepository.findAllById(orderedIds).stream()
                 .collect(Collectors.toMap(Exhibition::getId, Function.identity()));
 
+        // 장식장별 상한은 SQL 에서 걸립니다. 예전에는 굿즈를 전부 가져온 뒤 자바에서 잘랐는데,
+        // 응답만 잡히고 DB·영속성 컨텍스트에는 그대로 다 올라왔습니다.
+        List<Long> previewItemIds = exhibitionItemRepository.findPreviewItemIds(
+                orderedIds, ItemStatus.READY.name(), MAX_PREVIEW_ITEMS);
+
         // id asc 순으로 이미 정렬돼서 나오므로(리포지토리 쿼리), groupingBy 결과 리스트도 그 순서를 유지합니다.
-        Map<Long, List<ExhibitionItem>> itemsByExhibition = exhibitionItemRepository
-                .findAllByExhibitionIdsAndStatus(orderedIds, ItemStatus.READY).stream()
-                .collect(Collectors.groupingBy(item -> item.getExhibition().getId()));
+        Map<Long, List<ExhibitionItem>> itemsByExhibition = previewItemIds.isEmpty()
+                ? Map.of()
+                : exhibitionItemRepository.findAllByIdsOrdered(previewItemIds).stream()
+                        .collect(Collectors.groupingBy(item -> item.getExhibition().getId()));
 
         Map<Long, Long> likeCounts = exhibitionLikeRepository.countByExhibitionIds(orderedIds).stream()
                 .collect(Collectors.toMap(
                         ExhibitionLikeRepository.LikeCount::getExhibitionId,
                         ExhibitionLikeRepository.LikeCount::getLikeCount));
 
-        Set<Long> likedByMe = new HashSet<>(
-                exhibitionLikeRepository.findLikedExhibitionIds(viewerId, orderedIds));
+        // 비로그인이면 조회 자체를 건너뜁니다. userId 가 null 이면 `l.userId = null` 이 되어
+        // 어떤 행과도 일치하지 않으므로, 결과가 반드시 비는 쿼리를 요청마다 한 번씩 날리던 것입니다.
+        // 이 경로는 공개라 호출 빈도가 높습니다.
+        Set<Long> likedByMe = (viewerId == null)
+                ? Set.of()
+                : new HashSet<>(exhibitionLikeRepository.findLikedExhibitionIds(viewerId, orderedIds));
 
         // findAllById 는 순서를 보장하지 않으므로, 정렬해서 받은 id 순서를 그대로 복원합니다.
         return orderedIds.stream()
                 .map(exhibitions::get)
                 .filter(Objects::nonNull)
                 .map(exhibition -> {
-                    List<ExhibitionItem> items = itemsByExhibition
-                            .getOrDefault(exhibition.getId(), List.of()).stream()
-                            .limit(MAX_PREVIEW_ITEMS)
-                            .toList();
+                    // 상한은 findPreviewItemIds 가 이미 걸었습니다. 여기서 또 자르면 진짜 상한이
+                    // 어디인지 흐려지고, 쿼리 쪽이 망가져도 이 limit 이 가려버립니다.
+                    List<ExhibitionItem> items =
+                            itemsByExhibition.getOrDefault(exhibition.getId(), List.of());
                     String thumbnailUrl = items.isEmpty() ? null : items.get(0).getImageUrl();
                     return ExhibitionSummaryResponse.of(
                             exhibition,
