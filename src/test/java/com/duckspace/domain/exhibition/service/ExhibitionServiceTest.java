@@ -25,12 +25,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -78,6 +80,26 @@ class ExhibitionServiceTest {
     private ExhibitionItem itemOf(Exhibition e, String imageUrl) {
         return new ExhibitionItem(e, new ExhibitionItem.Placement(0.1, 0.2, 0.3, 0.3),
                 imageUrl, "굿즈", null, null, ItemStatus.READY);
+    }
+
+    /**
+     * 카드 미리보기 조회는 2단입니다 — 장식장별 상한을 건 id 조회, 그 id 로 본문 조회.
+     *
+     * <p>목에는 id 가 없으므로(엔티티를 직접 만들어 씁니다) 자리표시 id 를 만들어 두 단계를
+     * 이어 붙입니다. 상한 자체는 SQL 이 거는 것이라 목으로는 검증되지 않고,
+     * {@code ExhibitionRepositoryTest} 가 실제 DB 로 확인합니다.
+     */
+    private void givenPreviewItems(List<Long> exhibitionIds, List<ExhibitionItem> items) {
+        List<Long> itemIds = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            itemIds.add((long) (i + 1));
+        }
+        given(exhibitionItemRepository.findPreviewItemIds(
+                eq(exhibitionIds), eq(ItemStatus.READY.name()), anyInt()))
+                .willReturn(itemIds);
+        if (!itemIds.isEmpty()) {
+            given(exhibitionItemRepository.findAllByIdsOrdered(itemIds)).willReturn(items);
+        }
     }
 
     @Nested
@@ -229,8 +251,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of(itemA, itemB));
+            givenPreviewItems(List.of(3L), List.of(itemA, itemB));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
 
@@ -271,8 +292,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of());
+            givenPreviewItems(List.of(3L), List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(STRANGER, List.of(3L))).willReturn(List.of(3L));
 
@@ -292,14 +312,13 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findIdsByUserId(eq(OWNER), any(Pageable.class)))
                     .willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
-            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of());
+            givenPreviewItems(List.of(3L), List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
-            given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
 
             List<ExhibitionSummaryResponse> result = exhibitionService.getByUser(OWNER, null, null, null);
 
             assertThat(result.get(0).likedByMe()).isFalse();
+            verify(exhibitionLikeRepository, never()).findLikedExhibitionIds(any(), any());
         }
 
         @Test
@@ -390,8 +409,7 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
             // findAllById 는 순서를 보장하지 않으므로 일부러 뒤집어서 돌려줍니다.
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(second, first));
-            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
-                    .willReturn(List.of(itemOf(first, "thumb.png")));
+            givenPreviewItems(List.of(3L, 1L), List.of(itemOf(first, "thumb.png")));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of(3L));
 
@@ -414,8 +432,7 @@ class ExhibitionServiceTest {
 
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L, 1L));
             given(exhibitionRepository.findAllById(List.of(3L, 1L))).willReturn(List.of(first, second));
-            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L, 1L), ItemStatus.READY))
-                    .willReturn(List.of(firstItem, secondItem));
+            givenPreviewItems(List.of(3L, 1L), List.of(firstItem, secondItem));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L, 1L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L, 1L))).willReturn(List.of());
 
@@ -434,12 +451,12 @@ class ExhibitionServiceTest {
             given(exhibitionRepository.findPopularIds(any(Pageable.class))).willReturn(List.of(3L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
-            given(exhibitionLikeRepository.findLikedExhibitionIds(null, List.of(3L))).willReturn(List.of());
 
             List<ExhibitionSummaryResponse> result = exhibitionService.getPopular(10, null);
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).likedByMe()).isFalse();
+            verify(exhibitionLikeRepository, never()).findLikedExhibitionIds(any(), any());
         }
 
         @Test
@@ -492,14 +509,35 @@ class ExhibitionServiceTest {
         }
 
         @Test
+        @DisplayName("비로그인이면 likedByMe 조회를 아예 하지 않는다")
+        void 비로그인이면_좋아요_조회를_건너뛴다() {
+            // viewerId 가 null 이면 `l.userId = null` 이 되어 어떤 행과도 일치하지 않습니다.
+            // 결과가 반드시 비는 쿼리를 요청마다 한 번씩 날리고 있었습니다 — 이 경로는 공개라
+            // 호출 빈도가 높습니다.
+            Exhibition e = exhibitionWithId(3L, 2L, "공개 장식장");
+
+            given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of(3L));
+            given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(e));
+            givenPreviewItems(List.of(3L), List.of());
+            given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
+
+            ExhibitionSummaryPageResponse result = exhibitionService.getRecent(null, 10, null);
+
+            verify(exhibitionLikeRepository, never()).findLikedExhibitionIds(any(), any());
+            assertThat(result.items()).hasSize(1);
+            assertThat(result.items().get(0).likedByMe())
+                    .as("조회를 건너뛰어도 값은 그대로 false 여야 합니다")
+                    .isFalse();
+        }
+
+        @Test
         @DisplayName("다음 페이지가 있으면 hasNext 와 nextCursor 를 채운다")
         void 다음_페이지가_있으면_hasNext를_채운다() {
             Exhibition newest = exhibitionWithId(3L, 2L, "최신");
 
             given(exhibitionRepository.findRecentIds(isNull(), any(Pageable.class))).willReturn(List.of(3L, 2L));
             given(exhibitionRepository.findAllById(List.of(3L))).willReturn(List.of(newest));
-            given(exhibitionItemRepository.findAllByExhibitionIdsAndStatus(List.of(3L), ItemStatus.READY))
-                    .willReturn(List.of());
+            givenPreviewItems(List.of(3L), List.of());
             given(exhibitionLikeRepository.countByExhibitionIds(List.of(3L))).willReturn(List.of());
             given(exhibitionLikeRepository.findLikedExhibitionIds(OWNER, List.of(3L))).willReturn(List.of());
 
@@ -551,7 +589,7 @@ class ExhibitionServiceTest {
 
             assertThat(exhibitionService.search("없는키워드", 10, OWNER)).isEmpty();
             verify(exhibitionRepository, never()).findAllById(any());
-            verify(exhibitionItemRepository, never()).findAllByExhibitionIdsAndStatus(any(), any());
+            verify(exhibitionItemRepository, never()).findPreviewItemIds(any(), any(), anyInt());
         }
     }
 }

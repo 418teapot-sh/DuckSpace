@@ -140,8 +140,8 @@ class ExhibitionRepositoryTest {
     }
 
     @Test
-    @DisplayName("카드 미리보기용 굿즈 전체 — 여러 장식장의 굿즈를 한 번에, id asc 순으로 가져온다")
-    void 굿즈_전체_한번에조회() {
+    @DisplayName("카드 미리보기 — 여러 장식장의 굿즈를 한 번에, id asc 순으로, READY 만 가져온다")
+    void 굿즈_한번에조회() {
         Exhibition a = exhibition(1L, "A");
         Exhibition b = exhibition(2L, "B");
         ExhibitionItem a1 = item(a, "a1", "먼저", ItemStatus.READY);
@@ -150,12 +150,43 @@ class ExhibitionRepositoryTest {
         ExhibitionItem b1 = item(b, "b1", "B굿즈", ItemStatus.READY);
         entityManager.flush();
 
-        List<ExhibitionItem> items = exhibitionItemRepository.findAllByExhibitionIdsAndStatus(
-                List.of(a.getId(), b.getId()), ItemStatus.READY);
+        List<Long> ids = exhibitionItemRepository.findPreviewItemIds(
+                List.of(a.getId(), b.getId()), ItemStatus.READY.name(), 20);
+        List<ExhibitionItem> items = exhibitionItemRepository.findAllByIdsOrdered(ids);
 
         assertThat(items).extracting(ExhibitionItem::getId)
                 .as("장식장 A의 READY 굿즈 2개(id asc) 다음 장식장 B의 굿즈, PENDING은 제외")
                 .containsExactly(a1.getId(), a2.getId(), b1.getId());
+    }
+
+    @Test
+    @DisplayName("카드 미리보기 — 상한이 장식장마다 따로 걸린다 (전체 개수가 아니라)")
+    void 미리보기_상한은_장식장별() {
+        // 예전에는 굿즈를 전부 가져온 뒤 자바에서 잘랐습니다. 응답만 잡히고 DB·영속성 컨텍스트에는
+        // 그대로 다 올라와서, 굿즈가 많은 장식장 하나가 인증 없는 요청 하나로 메모리를 먹었습니다.
+        Exhibition many = exhibition(1L, "굿즈가 많은 장식장");
+        Exhibition few = exhibition(2L, "적은 장식장");
+        for (int i = 0; i < 25; i++) {
+            item(many, "m" + i, "굿즈" + i, ItemStatus.READY);
+        }
+        item(few, "f1", "하나", ItemStatus.READY);
+        item(few, "f2", "둘", ItemStatus.READY);
+        entityManager.flush();
+
+        List<Long> ids = exhibitionItemRepository.findPreviewItemIds(
+                List.of(many.getId(), few.getId()), ItemStatus.READY.name(), 20);
+
+        assertThat(ids)
+                .as("많은 쪽 20개(25개 중) + 적은 쪽 2개 = 22개. 전체 상한이었다면 20개가 나옵니다")
+                .hasSize(22);
+
+        List<ExhibitionItem> items = exhibitionItemRepository.findAllByIdsOrdered(ids);
+        assertThat(items).filteredOn(i -> i.getExhibition().getId().equals(many.getId()))
+                .as("한 장식장에서 가져오는 개수가 상한을 넘지 않아야 합니다")
+                .hasSize(20);
+        assertThat(items).filteredOn(i -> i.getExhibition().getId().equals(few.getId()))
+                .as("굿즈가 적은 장식장은 있는 만큼만 나옵니다")
+                .hasSize(2);
     }
 
     @Test
