@@ -45,9 +45,16 @@ public class Popup extends BaseTimeEntity {
     @Lob
     private String aiSummary;
 
+    /** 혜택/굿즈 소개 이미지. 상세 화면 "혜택 및 굿즈" 섹션용이라 목록 응답엔 안 실음 — 없어도 되는 값이라 nullable. */
+    private String benefitImageUrl;
+
+    @Lob
+    private String benefitDescription;
+
     @Builder
     private Popup(String title, String imageUrl, String description, String location,
-                  LocalDate startDate, LocalDate endDate, String aiSummary) {
+                  LocalDate startDate, LocalDate endDate, String aiSummary,
+                  String benefitImageUrl, String benefitDescription) {
         this.title = title;
         this.imageUrl = imageUrl;
         this.description = description;
@@ -55,10 +62,13 @@ public class Popup extends BaseTimeEntity {
         this.startDate = startDate;
         this.endDate = endDate;
         this.aiSummary = aiSummary;
+        this.benefitImageUrl = benefitImageUrl;
+        this.benefitDescription = benefitDescription;
     }
 
     public void update(String title, String imageUrl, String description, String location,
-                        LocalDate startDate, LocalDate endDate, String aiSummary) {
+                        LocalDate startDate, LocalDate endDate, String aiSummary,
+                        String benefitImageUrl, String benefitDescription) {
         this.title = title;
         this.imageUrl = imageUrl;
         this.description = description;
@@ -66,6 +76,8 @@ public class Popup extends BaseTimeEntity {
         this.startDate = startDate;
         this.endDate = endDate;
         this.aiSummary = aiSummary;
+        this.benefitImageUrl = benefitImageUrl;
+        this.benefitDescription = benefitDescription;
     }
 
     public PopupStatus getStatus() {

@@ -11,6 +11,8 @@ public record PopupCreateRequest(
         String description,
         String location,
         @NotNull LocalDate startDate,
-        @NotNull LocalDate endDate
+        @NotNull LocalDate endDate,
+        String benefitImageUrl,
+        String benefitDescription
 ) {
 }
