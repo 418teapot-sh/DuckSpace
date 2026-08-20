@@ -23,6 +23,14 @@ public class PostImage {
     public static final int MAX_COUNT = 4;
     public static final int IMAGE_URL_MAX_LENGTH = 255;
 
+    /**
+     * 목록 카드에 쓰는 <b>대표 이미지</b>의 {@code sortOrder}.
+     *
+     * <p>노출 순서가 {@code sortOrder} 오름차순이라 맨 앞이 대표입니다. 목록 배치 조회
+     * ({@code PostImageRepository#findThumbnails})가 이 값으로 한 장만 골라옵니다.
+     */
+    public static final int THUMBNAIL_SORT_ORDER = 0;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", updatable = false)
