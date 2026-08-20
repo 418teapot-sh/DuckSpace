@@ -59,7 +59,8 @@ class RemoveBgClientTest {
 
     private RemoveBgClient client(String... keys) {
         String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/removebg";
-        return new RemoveBgClient(String.join(",", keys), "", "preview", endpoint);
+        return new RemoveBgClient(String.join(",", keys), "", "preview", endpoint,
+                RemoveBgClient.TOTAL_BUDGET_SECONDS);
     }
 
     @Test
@@ -121,6 +122,55 @@ class RemoveBgClientTest {
 
         assertThat(result.getWidth()).isEqualTo(10);
         assertThat(result.getHeight()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("총 예산을 넘기면 남은 키를 태우지 않는다")
+    void stopsRotatingWhenTotalBudgetExhausted() {
+        // 타임아웃은 시도마다 새로 걸려서, 예산이 없으면 최악이 키 개수에 비례합니다
+        // (키 6개면 420초). 그 사이 배포가 시작되면 systemd 가 SIGKILL 을 보내
+        // 처리 중이던 사진이 깨집니다 — IMAGE_AWAIT_SECONDS 가 막으려던 상황입니다.
+        // 예산을 0 으로 두면 첫 시도 직후 마감이라, 두 번째 키로 넘어가지 않아야 합니다.
+        statusQueue.add(402);
+        statusQueue.add(200);
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/removebg";
+        RemoveBgClient client = new RemoveBgClient("key-a,key-b", "", "preview", endpoint, 0);
+
+        assertThatThrownBy(() -> client.removeBackground(new byte[]{1, 2, 3}, "a.png"))
+                .isInstanceOf(IOException.class);
+
+        assertThat(requestedKeys)
+                .as("예산이 없으면 첫 키만 시도하고 멈춰야 합니다")
+                .containsExactly("key-a");
+    }
+
+    @Test
+    @DisplayName("새 이름이 비어 있으면 예전 이름(REMOVEBG_API_KEY)으로 동작한다")
+    void fallsBackToLegacyKeyName() throws Exception {
+        // 이름이 안 옮겨진 환경에서 배경 제거가 조용히 꺼지는 것을 막는 폴백입니다.
+        statusQueue.add(200);
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/removebg";
+        RemoveBgClient client = new RemoveBgClient("", "legacy-key", "preview", endpoint,
+                RemoveBgClient.TOTAL_BUDGET_SECONDS);
+
+        assertThat(client.isEnabled()).isTrue();
+        client.removeBackground(new byte[]{1, 2, 3}, "a.png");
+
+        assertThat(requestedKeys).containsExactly("legacy-key");
+    }
+
+    @Test
+    @DisplayName("새 이름이 있으면 예전 이름을 무시한다")
+    void newNameWinsOverLegacyName() throws Exception {
+        // 우선순위가 뒤집히면 새로 넣은 키들을 두고 소진된 옛 키만 씁니다 — 그런데
+        // 로그는 정상이고 응답도 200 이라 눈에 안 띕니다.
+        statusQueue.add(200);
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/removebg";
+        new RemoveBgClient("new-key", "legacy-key", "preview", endpoint,
+                RemoveBgClient.TOTAL_BUDGET_SECONDS)
+                .removeBackground(new byte[]{1, 2, 3}, "a.png");
+
+        assertThat(requestedKeys).containsExactly("new-key");
     }
 
     private static byte[] pngBytes() throws IOException {

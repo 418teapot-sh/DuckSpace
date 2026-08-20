@@ -56,11 +56,39 @@ public class ExhibitionAsyncConfig {
     private static final int QUEUE_CAPACITY = 20;
 
     /**
+     * 종료할 때 진행 중인 작업을 기다려주는 시간.
+     *
+     * <p><b>이 두 값은 {@code deploy/duckspace.service} 의 {@code TimeoutStopSec} 과 한 묶음입니다.</b>
+     * 스프링이 여기 적힌 만큼 기다리는 동안 systemd 도 프로세스를 기다려주는데, systemd 쪽이
+     * 먼저 끝나면 <b>SIGKILL</b> 이 날아가서 기다린 의미가 없어집니다. 처리 중이던 사진이
+     * 그대로 깨지고, 배포할 때마다 재현됩니다.
+     *
+     * <pre>
+     *   이미지 105초 + 정리 30초 = 135초  &lt;  TimeoutStopSec 150초
+     *                                        └ 남는 15초는 톰캣·커넥션 풀 정리 몫
+     * </pre>
+     *
+     * <p>이미지 쪽이 105초인 근거는 작업 하나의 최악입니다 —
+     * remove.bg 연결 10초 + 요청 60초, 그 뒤 S3 왕복 30초로 약 100초입니다.
+     * 예전에는 60초였는데, 그러면 remove.bg 응답을 기다리던 중에 잘렸습니다.
+     *
+     * <p>두 실행기는 <b>차례로</b> 닫힙니다(이미지 먼저, 정리 나중 — {@code @DependsOn} 참고).
+     * 그래서 예산은 합으로 계산해야 합니다.
+     *
+     * <p>{@code ShutdownBudgetTest} 가 유닛 파일을 직접 읽어 이 합을 검사합니다.
+     * 한쪽만 고치면 테스트가 실패합니다.
+     */
+    static final int IMAGE_AWAIT_SECONDS = 105;
+
+    /** @see #IMAGE_AWAIT_SECONDS */
+    static final int CLEANUP_AWAIT_SECONDS = 30;
+
+    /**
      * <b>{@code @DependsOn} 은 종료 순서 때문에 붙였습니다.</b>
      *
      * <p>스프링은 <b>생성의 역순</b>으로 빈을 파괴합니다. 선언 순서대로 두면 정리 실행기가
-     * 나중에 만들어져 <b>먼저</b> 종료되는데, 그때 이미지 실행기는 아직 최대 60초의 배수 시간이
-     * 남아 있습니다. 그 사이 이미지 작업이 부르는
+     * 나중에 만들어져 <b>먼저</b> 종료되는데, 그때 이미지 실행기는 아직
+     * {@link #IMAGE_AWAIT_SECONDS} 초의 배수 시간이 남아 있습니다. 그 사이 이미지 작업이 부르는
      * {@code ImageCleanup.delete/deleteOrphan} 은 이미 닫힌 실행기에서 거절되어
      * 인라인 폴백으로 떨어집니다 — 배수 예산을 잡아둔 바로 그 구간에 DB 조회와 저장소 왕복이
      * 이미지 스레드로 들어옵니다.
@@ -85,7 +113,7 @@ public class ExhibitionAsyncConfig {
         // 배포마다 systemd 가 프로세스를 재시작합니다. 이 설정이 없으면 종료 시 shutdownNow() 가
         // remove.bg 호출 중인 스레드를 인터럽트해서, 처리 중이던 사진이 매 배포마다 깨집니다.
         executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(60);
+        executor.setAwaitTerminationSeconds(IMAGE_AWAIT_SECONDS);
 
         executor.initialize();
         return executor;
@@ -113,7 +141,7 @@ public class ExhibitionAsyncConfig {
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         // 정리가 끝나기 전에 프로세스가 내려가면 객체가 그대로 남습니다.
         executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(30);
+        executor.setAwaitTerminationSeconds(CLEANUP_AWAIT_SECONDS);
         executor.initialize();
         return executor;
     }

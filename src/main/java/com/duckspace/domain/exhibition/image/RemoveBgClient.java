@@ -60,9 +60,39 @@ public class RemoveBgClient {
      */
     private static final int ERROR_BODY_LOG_LIMIT = 512;
 
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * <b>키를 몇 개 등록하든 remove.bg 에 쓰는 총 시간.</b> 이 값이 곧 종료 대기 예산의 근거입니다.
+     *
+     * <p>타임아웃은 <b>시도마다</b> 다시 걸립니다(연결 10초 + 요청 60초 = 70초). 그래서 상한이
+     * 시도 횟수에 비례합니다 — 키가 6개면 최악 420초입니다. 그 사이 배포가 시작되면 systemd 가
+     * {@code TimeoutStopSec} 에서 <b>SIGKILL</b> 을 보내 처리 중이던 사진이 깨집니다.
+     * {@code ExhibitionAsyncConfig.IMAGE_AWAIT_SECONDS} 가 막으려던 바로 그 상황입니다.
+     *
+     * <p>덮으려고 대기 시간을 올리는 건 답이 아닙니다 — 420초를 덮으려면 <b>배포 한 번이 8분씩</b>
+     * 걸립니다({@code systemctl restart} 가 끝나야 헬스체크로 넘어갑니다).
+     *
+     * <p>그래서 <b>호출 전체</b>에 마감을 둡니다. 로테이션은 이 예산 안에서 best-effort 이고,
+     * 키가 몇 개든 최악은 여기 적힌 값으로 고정됩니다. 402 는 크레딧 확인이라 보통 즉시 오므로
+     * 실제로는 키를 다 돌 시간이 남고, 정말 느린 날에만 중간에 끊깁니다. 그때는 원본 폴백이라
+     * 배경이 남은 사진이 저장되는데, <b>배포 중 SIGKILL 로 사진이 깨지는 것보다 낫습니다.</b>
+     *
+     * <p>{@code ShutdownBudgetTest} 가 이 값을 직접 읽어 종료 대기 시간과 대조합니다.
+     * (PR #95 리뷰 — 예산 계산이 키 로테이션을 반영하지 못하던 것)
+     *
+     * <p>{@code endpoint} 와 마찬가지로 설정({@code removebg.total-budget-seconds})으로 덮을 수
+     * 있습니다. 예산 초과 경로는 <b>실제로 느릴 때만</b> 도는 코드라, 테스트에서 0 을 넣지 않으면
+     * 70초를 기다려야 검증됩니다. {@code application.yml} 에는 넣지 않았습니다 — 이 값을 바꾸면
+     * 종료 대기 예산의 근거가 흔들리므로, 바꿀 일이 생기면 여기와 같이 봐야 합니다.
+     */
+    public static final int TOTAL_BUDGET_SECONDS = 70;
+
     private final List<String> apiKeys;
     private final String size;
     private final String endpoint;
+    private final int totalBudgetSeconds;
     private final HttpClient http;
 
     /** 다음 호출에 쓸 키의 인덱스. 402/403 을 받으면 다음 키로 넘어갑니다. */
@@ -74,7 +104,9 @@ public class RemoveBgClient {
                           // 막기 위한 폴백입니다. 모든 환경이 새 이름으로 옮겨가면 지워도 됩니다.
                           @Value("${removebg.api-key:}") String legacySingleKey,
                           @Value("${removebg.size:preview}") String size,
-                          @Value("${removebg.endpoint:" + DEFAULT_ENDPOINT + "}") String endpoint) {
+                          @Value("${removebg.endpoint:" + DEFAULT_ENDPOINT + "}") String endpoint,
+                          @Value("${removebg.total-budget-seconds:" + TOTAL_BUDGET_SECONDS + "}")
+                          int totalBudgetSeconds) {
         String rawKeys = apiKeysRaw == null ? "" : apiKeysRaw;
         String legacyKey = legacySingleKey == null ? "" : legacySingleKey;
         String effectiveRaw = rawKeys.isBlank() ? legacyKey : rawKeys;
@@ -90,8 +122,9 @@ public class RemoveBgClient {
                 .toList();
         this.size = size;
         this.endpoint = endpoint;
+        this.totalBudgetSeconds = totalBudgetSeconds;
         this.http = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(CONNECT_TIMEOUT)
                 .build();
 
         if (!isEnabled()) {
@@ -126,7 +159,18 @@ public class RemoveBgClient {
 
         IOException lastFailure = null;
 
+        // 호출 전체의 마감. 시도마다 타임아웃이 새로 걸리므로, 이게 없으면 상한이 키 개수에
+        // 비례합니다(TOTAL_BUDGET_SECONDS 주석 참고).
+        long deadlineNanos = System.nanoTime()
+                + Duration.ofSeconds(totalBudgetSeconds).toNanos();
+
         for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
+            if (attempt > 0 && System.nanoTime() >= deadlineNanos) {
+                log.info("remove.bg 총 예산 {}초를 넘겨 남은 키를 시도하지 않습니다. ({}/{} 시도)",
+                        totalBudgetSeconds, attempt, apiKeys.size());
+                break;
+            }
+
             int keyIndex = currentIndex.get();
             String key = apiKeys.get(keyIndex);
 
@@ -134,7 +178,7 @@ public class RemoveBgClient {
                     .uri(URI.create(endpoint))
                     .header("X-Api-Key", key)
                     .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                    .timeout(Duration.ofSeconds(60))
+                    .timeout(REQUEST_TIMEOUT)
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build();
 
