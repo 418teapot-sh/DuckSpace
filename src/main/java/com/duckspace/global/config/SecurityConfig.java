@@ -36,7 +36,13 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
-            "/actuator/**",
+            // 배포 워크플로우가 기동 확인·롤백 판정에 씁니다(deploy.yml 의 헬스체크 루프).
+            // curl 이 토큰 없이 부르므로 반드시 공개여야 하고, 이 두 개만 열어둡니다 —
+            // "/actuator/**" 로 두면 나중에 메트릭을 붙이려고 exposure.include 를 추가하는
+            // 순간 /actuator/env · /actuator/heapdump 까지 같이 무인증이 됩니다(heapdump 는
+            // 마스킹도 없습니다). 필요한 엔드포인트가 생기면 그때 하나씩 추가하세요.
+            "/actuator/health",
+            "/actuator/info",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
