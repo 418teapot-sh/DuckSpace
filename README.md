@@ -6,6 +6,9 @@
 * **🌐 Service Link**: [https://duckspace.cloud](https://duckspace.cloud)
 * **📜 API Document (Swagger)**: [https://duckspace.cloud/swagger-ui.html](https://duckspace.cloud/swagger-ui.html)
 
+> ⚠️ 배포 환경의 Swagger 는 운영/시연 시점에 **비공개로 전환**될 수 있습니다.
+> 로컬에서는 `http://localhost:8080/swagger-ui.html` 로 항상 열려 있습니다.
+
 ---
 
 ## 👥 Team & Role
@@ -26,8 +29,9 @@
 
 **🖼️ 전시 (장식장)**
 
-* **자유 배치 CRUD**: 굿즈 배치 및 대표 장식장 조회 (커서 기반 페이지네이션)
-* **배경 제거 파이프라인**: 이미지 업로드 시 `remove.bg API`를 통해 비동기로 배경을 자동 제거 후 보관함에 저장
+* **자유 배치 CRUD**: 굿즈를 비율 좌표(0~1)와 회전 각도로 배치. 대표 장식장은 단건 조회
+* **커서 기반 페이지네이션**: 장식장 피드 · 내 장식장 목록 · 유저별 장식장 목록 · 굿즈 검색
+* **배경 제거 파이프라인**: 사진 업로드 시 `remove.bg API` 로 **비동기** 배경 제거 → 384px PNG 로 정규화 후 저장. 보관함(`POST /api/images`)과 장식장 직접 업로드(`POST /api/exhibitions/{id}/items/upload`) 두 경로가 같은 파이프라인을 씁니다
 
 **💬 덕톡라운지 & 채팅**
 
@@ -45,11 +49,16 @@
 ## 🛠 Tech Stack
 
 * **Language & Framework**: Java 21, Spring Boot 4.1 (`spring-boot-starter-webmvc`, Jackson 3)
-* **Security & Auth**: Spring Security, JWT (Access / Refresh Token)
+* **Build & Tooling**: Gradle, Lombok
+* **Security & Auth**: Spring Security, JWT (Access / Refresh Token) — `jjwt`
 * **Database & Persistence**: Spring Data JPA, MySQL 8
-* **External API**: AWS S3, remove.bg API, OpenAI API
+* **External API**: AWS S3(AWS SDK), remove.bg · OpenAI (별도 SDK 없이 JDK `HttpClient` 직접 호출)
 * **API Documentation**: springdoc-openapi (Swagger)
 * **DevOps**: GitHub Actions, AWS EC2, Nginx, Let's Encrypt, systemd
+
+> Spring Boot **4.x** 라 3.x 와 다른 점이 있습니다 — Jackson 은 `tools.jackson.*`(Jackson 3),
+> 웹 스타터는 `spring-boot-starter-webmvc`, 테스트 슬라이스 어노테이션도 패키지가 바뀌었습니다.
+> 서드파티 라이브러리를 추가할 때는 Boot 4 호환 여부를 먼저 확인해 주세요.
 
 ---
 
@@ -65,7 +74,8 @@ com.duckspace
 │   ├── entity/               # BaseTimeEntity
 │   ├── exception/            # BaseErrorCode, BusinessException, GlobalExceptionHandler
 │   ├── filter/                # TraceIdFilter
-│   └── response/              # ApiResponse
+│   ├── response/              # ApiResponse
+│   └── support/               # Paging(커서 페이징), LikeEscaper, ServiceZone, openai/
 └── domain/                  # 비즈니스 도메인
     └── <domain>/
         ├── controller/
@@ -95,7 +105,7 @@ com.duckspace
 
 ### 1. Prerequisite
 
-로컬 테스트 환경 작동을 위해 **MySQL 컨테이너**가 미리 구동되어 있어야 합니다.
+로컬 실행과 **테스트 모두** MySQL 이 필요합니다.
 
 ```bash
 # 1. 개발(duckspace) 및 테스트(duckspace_test) DB 동시 생성
@@ -107,6 +117,25 @@ docker compose up -d
 
 > **Swagger UI 확인**: `http://localhost:8080/swagger-ui.html`
 
+**`./gradlew test` 도 MySQL 로 돕니다.** `docker compose up -d` 를 먼저 하지 않으면 테스트가 전부 실패합니다.
+H2 를 쓰지 않는 이유는 **운영(MySQL)과 미묘하게 다르게 동작하는 지점** 때문입니다 — 실제로 enum 을
+varchar 로 매핑할 때 H2 가 잘못된 check 제약을 만들어 INSERT 가 전부 실패한 적이 있습니다.
+
+<details>
+<summary>Docker 없이 로컬에 설치된 MySQL 을 쓰는 경우</summary>
+
+`docker/mysql-init/README-local-mysql.sql` 에 DB·계정 생성 SQL 이 있습니다.
+
+```bash
+mysql -uroot -p < docker/mysql-init/README-local-mysql.sql
+```
+
+`duckspace` 와 `duckspace_test` 두 DB 가 만들어집니다. 이미 `docker compose up -d` 를 돌린 뒤라면
+초기화 스크립트가 **볼륨이 비어 있을 때만** 실행되므로, `Unknown database 'duckspace_test'` 가 날 때도
+같은 SQL 을 직접 넣어주면 됩니다.
+
+</details>
+
 ### 2. Environment Variables (.env)
 
 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 필요한 키를 작성해 주세요.
@@ -117,6 +146,11 @@ docker compose up -d
 REMOVEBG_API_KEYS=your_key_1,your_key_2
 OPENAI_API_KEY=your_openai_key
 ```
+
+> ⚠️ **remove.bg 무료 플랜은 계정당 월 50회, `preview`(0.25MP) 전용입니다.**
+> 키를 넣은 상태로 사진 업로드를 누르면 **진짜 크레딧이 나갑니다.** 반복 테스트가 필요하면
+> 키를 비워두세요 — 키가 없으면 배경 제거만 건너뛰고 원본이 그대로 저장됩니다.
+> 서로 다른 계정의 키를 콤마로 여러 개 넣으면 하나가 소진(402)될 때 다음 키로 자동 전환됩니다.
 
 ---
 
