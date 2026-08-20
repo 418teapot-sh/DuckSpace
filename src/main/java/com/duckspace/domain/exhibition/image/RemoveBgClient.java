@@ -39,7 +39,12 @@ import java.util.regex.Pattern;
 @Component
 public class RemoveBgClient {
 
-    private static final String ENDPOINT = "https://api.remove.bg/v1.0/removebg";
+    /**
+     * 테스트에서 {@code removebg.endpoint} 로 로컬 스텁 서버를 대신 붙일 수 있도록 설정값으로
+     * 뺐습니다. 실제 remove.bg 를 부르지 않고는 로테이션 분기(402/403 전환, 다른 코드는
+     * 즉시 실패)를 검증할 방법이 없었기 때문입니다.
+     */
+    private static final String DEFAULT_ENDPOINT = "https://api.remove.bg/v1.0/removebg";
 
     /** 파일명에 허용할 문자. 나머지는 전부 {@code _} 로 바꿉니다. */
     private static final Pattern UNSAFE_FILENAME_CHARS = Pattern.compile("[^A-Za-z0-9._-]");
@@ -57,18 +62,34 @@ public class RemoveBgClient {
 
     private final List<String> apiKeys;
     private final String size;
+    private final String endpoint;
     private final HttpClient http;
 
     /** 다음 호출에 쓸 키의 인덱스. 402/403 을 받으면 다음 키로 넘어갑니다. */
     private final AtomicInteger currentIndex = new AtomicInteger(0);
 
     public RemoveBgClient(@Value("${removebg.api-keys:}") String apiKeysRaw,
-                          @Value("${removebg.size:preview}") String size) {
-        this.apiKeys = Arrays.stream(apiKeysRaw.split(","))
+                          // removebg.api-key 는 removebg.api-keys 로 이름이 바뀌었습니다. 옛날 이름만
+                          // 설정된 환경(서버 app.env, 팀원 로컬 .env)이 배경 제거가 조용히 꺼지는 걸
+                          // 막기 위한 폴백입니다. 모든 환경이 새 이름으로 옮겨가면 지워도 됩니다.
+                          @Value("${removebg.api-key:}") String legacySingleKey,
+                          @Value("${removebg.size:preview}") String size,
+                          @Value("${removebg.endpoint:" + DEFAULT_ENDPOINT + "}") String endpoint) {
+        String rawKeys = apiKeysRaw == null ? "" : apiKeysRaw;
+        String legacyKey = legacySingleKey == null ? "" : legacySingleKey;
+        String effectiveRaw = rawKeys.isBlank() ? legacyKey : rawKeys;
+
+        if (rawKeys.isBlank() && !legacyKey.isBlank()) {
+            log.warn("removebg.api-key(REMOVEBG_API_KEY) 는 removebg.api-keys(REMOVEBG_API_KEYS) 로 "
+                    + "바뀌었습니다. 예전 이름으로 동작 중이니 옮겨주세요.");
+        }
+
+        this.apiKeys = Arrays.stream(effectiveRaw.split(","))
                 .map(String::trim)
                 .filter(key -> !key.isBlank())
                 .toList();
         this.size = size;
+        this.endpoint = endpoint;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -94,6 +115,10 @@ public class RemoveBgClient {
     public BufferedImage removeBackground(byte[] imageBytes, String fileName)
             throws IOException, InterruptedException {
 
+        if (apiKeys.isEmpty()) {
+            throw new IOException("등록된 remove.bg 키가 없습니다.");
+        }
+
         // boundary 를 요청마다 새로 뽑습니다. 고정값이면 업로드된 바이트 안에 같은 문자열을
         // 심어 파트 경계를 위조할 수 있습니다. 키를 바꿔 재시도해도 바디는 동일하므로 한 번만 만듭니다.
         String boundary = "----DuckSpace" + UUID.randomUUID().toString().replace("-", "");
@@ -106,7 +131,7 @@ public class RemoveBgClient {
             String key = apiKeys.get(keyIndex);
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ENDPOINT))
+                    .uri(URI.create(endpoint))
                     .header("X-Api-Key", key)
                     .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                     .timeout(Duration.ofSeconds(60))
@@ -144,6 +169,10 @@ public class RemoveBgClient {
                 continue;
             }
 
+            // 429(분당 요청 한도 초과)도 여기로 떨어져 로테이션하지 않습니다. remove.bg 가 이
+            // 한도를 키 단위로 매기는지 IP 단위로 매기는지 확인하지 못했습니다 — IP 단위라면
+            // 키를 바꿔도 안 풀리고, 키 단위라면 402/403 처럼 로테이션 대상이어야 합니다.
+            // 확인 전까지는 보수적으로 즉시 실패시킵니다.
             throw new IOException("remove.bg 호출 실패 (HTTP %d): %s".formatted(
                     response.statusCode(), summarize(response.body())));
         }
