@@ -28,7 +28,6 @@ import com.duckspace.domain.post.repository.PostLikeRepository;
 import com.duckspace.domain.post.repository.PostRepository;
 import com.duckspace.domain.post.repository.TradeItemRepository;
 import com.duckspace.domain.user.entity.User;
-import com.duckspace.domain.user.repository.UserCard;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
 import com.duckspace.global.support.LikeEscaper;
@@ -90,13 +89,13 @@ public class PostService {
         List<Long> postIds = posts.stream().map(Post::getId).toList();
         Map<Long, Long> likeCounts = batchLikeCounts(postIds);
         Map<Long, Long> commentCounts = batchCommentCounts(postIds);
-        Map<Long, UserCard> authors = batchAuthors(posts);
+        Map<Long, User> authors = batchAuthors(posts);
         Map<Long, String> thumbnails = batchThumbnails(postIds);
         Set<Long> likedPostIds = batchLikedPostIds(viewerId, postIds);
 
         return posts.stream()
                 .map(post -> {
-                    UserCard author = authors.get(post.getUserId());
+                    User author = authors.get(post.getUserId());
                     return new CasualPostSummaryResponse(
                             post.getId(),
                             post.getContent(),
@@ -416,10 +415,18 @@ public class PostService {
                         (first, ignored) -> first));
     }
 
-    /** 목록 카드에 그릴 작성자 정보(닉네임 + 프로필 사진)를 한 번에 모읍니다. */
-    private Map<Long, UserCard> batchAuthors(List<Post> posts) {
+    /**
+     * 목록 카드에 그릴 작성자 정보(닉네임 + 프로필 사진)를 한 번에 모읍니다.
+     *
+     * <p>{@code findNicknamesByIds} 를 쓰면 닉네임만 나와서 프로필 사진이 빠집니다. 그러면
+     * 클라이언트가 <b>카드마다 유저를 다시 조회</b>하게 됩니다 — 실제로 그러고 있었습니다.
+     * 어차피 {@code findNicknamesByIds} 도 내부에서 {@code findAllById} 로 엔티티를 통째로
+     * 불러오므로, 여기서 직접 부르는 것과 쿼리 수가 같습니다.
+     */
+    private Map<Long, User> batchAuthors(List<Post> posts) {
         List<Long> authorIds = posts.stream().map(Post::getUserId).distinct().toList();
-        return userRepository.findCardsByIds(authorIds);
+        return userRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
     /**

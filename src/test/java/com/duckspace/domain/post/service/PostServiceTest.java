@@ -26,7 +26,8 @@ import com.duckspace.domain.post.repository.PostLikeRepository;
 import com.duckspace.domain.post.repository.PostRepository;
 import com.duckspace.domain.post.repository.PostThumbnail;
 import com.duckspace.domain.post.repository.TradeItemRepository;
-import com.duckspace.domain.user.repository.UserCard;
+import com.duckspace.domain.user.entity.AuthProvider;
+import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -206,8 +207,8 @@ class PostServiceTest {
 
             given(postRepository.search(any(), any(), any(), any(), any()))
                     .willReturn(List.of(withImage, withoutImage));
-            given(userRepository.findCardsByIds(List.of(10L)))
-                    .willReturn(Map.of(10L, card(10L, "글쓴이", "https://img/me.png")));
+            given(userRepository.findAllById(List.of(10L)))
+                    .willReturn(List.of(user(10L, "글쓴이", "https://img/me.png")));
             given(postImageRepository.findThumbnails(List.of(1L, 2L), PostImage.THUMBNAIL_SORT_ORDER))
                     .willReturn(List.of(thumbnail(1L, "https://img/first.png")));
 
@@ -227,8 +228,8 @@ class PostServiceTest {
                     casualPost(1L, 10L), casualPost(2L, 10L), casualPost(3L, 11L));
 
             given(postRepository.search(any(), any(), any(), any(), any())).willReturn(posts);
-            given(userRepository.findCardsByIds(any()))
-                    .willReturn(Map.of(10L, card(10L, "A", null), 11L, card(11L, "B", null)));
+            given(userRepository.findAllById(any()))
+                    .willReturn(List.of(user(10L, "A", null), user(11L, "B", null)));
             given(postImageRepository.findThumbnails(any(), anyInt())).willReturn(List.of());
 
             postService.listCasual(null, null, null, null, VIEWER);
@@ -240,7 +241,7 @@ class PostServiceTest {
             // 좋아요·작성자도 글마다가 아니라 한 번에 — 프론트가 하던 방식을 서버가 반복하지 않게
             verify(postLikeRepository, times(1)).findLikedPostIds(VIEWER, List.of(1L, 2L, 3L));
             verify(postLikeRepository, never()).existsByPostIdAndUserId(any(), any());
-            verify(userRepository, times(1)).findCardsByIds(List.of(10L, 11L));
+            verify(userRepository, times(1)).findAllById(List.of(10L, 11L));
         }
 
         @Test
@@ -253,8 +254,8 @@ class PostServiceTest {
 
             given(postRepository.search(any(), any(), any(), any(), any()))
                     .willReturn(List.of(likedPost, notLikedPost));
-            given(userRepository.findCardsByIds(any()))
-                    .willReturn(Map.of(10L, card(10L, "글쓴이", null)));
+            given(userRepository.findAllById(any()))
+                    .willReturn(List.of(user(10L, "글쓴이", null)));
             given(postLikeRepository.findLikedPostIds(VIEWER, List.of(1L, 2L)))
                     .willReturn(List.of(1L));
 
@@ -274,9 +275,9 @@ class PostServiceTest {
 
             given(postRepository.search(any(), any(), any(), any(), any()))
                     .willReturn(List.of(withProfile, withoutProfile));
-            given(userRepository.findCardsByIds(any())).willReturn(Map.of(
-                    10L, card(10L, "사진있음", "https://img/me.png"),
-                    11L, card(11L, "사진없음", null)));
+            given(userRepository.findAllById(any())).willReturn(List.of(
+                    user(10L, "사진있음", "https://img/me.png"),
+                    user(11L, "사진없음", null)));
 
             List<CasualPostSummaryResponse> result = postService.listCasual(null, null, null, null, VIEWER);
 
@@ -288,23 +289,17 @@ class PostServiceTest {
                             tuple("사진없음", null));
         }
 
-        private UserCard card(Long id, String nickname, String profileImageUrl) {
-            return new UserCard() {
-                @Override
-                public Long getId() {
-                    return id;
-                }
-
-                @Override
-                public String getNickname() {
-                    return nickname;
-                }
-
-                @Override
-                public String getProfileImageUrl() {
-                    return profileImageUrl;
-                }
-            };
+        /** 목록 응답을 만들 때 필요한 필드만 채운 작성자. */
+        private User user(Long id, String nickname, String profileImageUrl) {
+            User user = User.builder()
+                    .email("u" + id + "@duckspace.com")
+                    .nickname(nickname)
+                    .password("encoded")
+                    .authProvider(AuthProvider.LOCAL)
+                    .build();
+            ReflectionTestUtils.setField(user, "id", id);
+            ReflectionTestUtils.setField(user, "profileImageUrl", profileImageUrl);
+            return user;
         }
 
         private PostThumbnail thumbnail(Long postId, String imageUrl) {
