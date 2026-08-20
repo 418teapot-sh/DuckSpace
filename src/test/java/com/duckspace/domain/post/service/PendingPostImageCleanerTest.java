@@ -1,9 +1,10 @@
 package com.duckspace.domain.post.service;
 
-import com.duckspace.domain.exhibition.image.ImageStorage;
+import com.duckspace.domain.exhibition.image.ImageCleanup;
 import com.duckspace.domain.post.entity.PendingPostImage;
 import com.duckspace.domain.post.repository.PendingPostImageRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -16,6 +17,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,13 +29,13 @@ class PendingPostImageCleanerTest {
     private PendingPostImageRepository pendingPostImageRepository;
 
     @Mock
-    private ImageStorage imageStorage;
+    private ImageCleanup imageCleanup;
 
     private PendingPostImageCleaner cleaner;
 
     @BeforeEach
     void setUp() {
-        cleaner = new PendingPostImageCleaner(pendingPostImageRepository, imageStorage);
+        cleaner = new PendingPostImageCleaner(pendingPostImageRepository, imageCleanup);
     }
 
     private PendingPostImage pending(Long id, String imageUrl) {
@@ -43,14 +45,19 @@ class PendingPostImageCleanerTest {
     }
 
     @Test
+    @DisplayName("방치된 이미지는 행을 지우고, 파일 삭제는 ImageCleanup 에 맡긴다")
     void 오래_방치된_이미지를_저장소와_함께_지운다() {
         given(pendingPostImageRepository.findByCreatedAtBefore(any(), any(Pageable.class)))
                 .willReturn(List.of(pending(1L, "https://cdn/a.png"), pending(2L, "https://cdn/b.png")));
 
         cleaner.cleanupAbandoned();
 
-        verify(imageStorage).deleteByUrl("https://cdn/a.png");
-        verify(imageStorage).deleteByUrl("https://cdn/b.png");
+        // 파일 삭제는 ImageCleanup 이 맡습니다 — 참조 확인·재시도·전용 실행기가 거기 있습니다.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> urls = ArgumentCaptor.forClass(List.class);
+        verify(imageCleanup).deleteAfterCommit(urls.capture());
+        assertThat(urls.getValue()).containsExactly("https://cdn/a.png", "https://cdn/b.png");
+
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<PendingPostImage>> captor = ArgumentCaptor.forClass(List.class);
         verify(pendingPostImageRepository).deleteAll(captor.capture());
@@ -64,7 +71,7 @@ class PendingPostImageCleanerTest {
 
         cleaner.cleanupAbandoned();
 
-        verify(imageStorage, never()).deleteByUrl(any());
+        verify(imageCleanup, never()).deleteAfterCommit(anyList());
         verify(pendingPostImageRepository, never()).deleteAll(any());
     }
 }

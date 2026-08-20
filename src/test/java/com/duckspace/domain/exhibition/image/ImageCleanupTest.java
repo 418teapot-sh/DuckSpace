@@ -2,6 +2,7 @@ package com.duckspace.domain.exhibition.image;
 
 import com.duckspace.domain.exhibition.repository.ExhibitionItemRepository;
 import com.duckspace.domain.exhibition.repository.GoodsImageRepository;
+import com.duckspace.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,13 +44,30 @@ class ImageCleanupTest {
     @Mock
     private GoodsImageRepository goodsImageRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     private ImageCleanup imageCleanup;
 
     @BeforeEach
     void setUp() {
         // 테스트에서는 큐 없이 같은 스레드에서 바로 실행합니다.
-        imageCleanup = new ImageCleanup(
-                imageStorage, exhibitionItemRepository, goodsImageRepository, Runnable::run);
+        imageCleanup = new ImageCleanup(imageStorage, exhibitionItemRepository,
+                goodsImageRepository, userRepository, Runnable::run);
+    }
+
+    @Test
+    @DisplayName("프로필 사진으로 쓰이는 URL 은 지우지 않는다")
+    void 프로필_사진이면_보존() {
+        // 프론트가 프로필 사진을 게시글 이미지 업로드로 올려서, 여기서 안 보면
+        // "글에 안 쓰인 이미지" 로 잡혀 24시간 뒤 파일만 사라집니다(깨진 아바타).
+        given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of(URL));
+
+        imageCleanup.deleteAfterCommit(URL);
+
+        verify(imageStorage, never()).deleteByUrl(URL);
     }
 
     @Test
@@ -57,6 +75,7 @@ class ImageCleanupTest {
     void 굿즈가_참조_중이면_보존() {
         given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of(URL));
         given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of());
 
         imageCleanup.deleteAfterCommit(URL);
 
@@ -68,6 +87,7 @@ class ImageCleanupTest {
     void 보관함이_소유하면_보존() {
         given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
         given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of(URL));
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of());
 
         imageCleanup.deleteAfterCommit(URL);
 
@@ -79,6 +99,7 @@ class ImageCleanupTest {
     void 미참조면_삭제() {
         given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
         given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of());
 
         imageCleanup.deleteAfterCommit(URL);
 
@@ -92,6 +113,7 @@ class ImageCleanupTest {
         // 성공하면 원본이 무조건 지워져 배치된 굿즈가 깨졌습니다. 이제 여기서 막습니다.
         given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of(URL));
         given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of());
 
         imageCleanup.delete(URL);
 
@@ -119,6 +141,7 @@ class ImageCleanupTest {
                 .willThrow(new RuntimeException("pool exhausted"))
                 .willReturn(List.of());
         given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of());
 
         imageCleanup.deleteAfterCommit(URL);
 
@@ -145,6 +168,7 @@ class ImageCleanupTest {
         List<String> withDuplicates = List.of(URL, URL, URL);
         given(exhibitionItemRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
         given(goodsImageRepository.findReferencedUrls(List.of(URL))).willReturn(List.of());
+        given(userRepository.findProfileImageUrlsIn(List.of(URL))).willReturn(List.of());
 
         imageCleanup.deleteAfterCommit(withDuplicates);
 
