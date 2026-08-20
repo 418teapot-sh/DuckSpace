@@ -41,7 +41,9 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -76,7 +78,8 @@ public class PostService {
         return post.getId();
     }
 
-    public List<CasualPostSummaryResponse> listCasual(String keyword, Long cursor, Integer size, Long authorId) {
+    public List<CasualPostSummaryResponse> listCasual(String keyword, Long cursor, Integer size,
+                                                      Long authorId, Long viewerId) {
         List<Post> posts = postRepository.search(
                 BoardType.CASUAL, cursor, normalizeKeyword(keyword), authorId, pageable(size));
         if (posts.isEmpty()) {
@@ -86,19 +89,25 @@ public class PostService {
         List<Long> postIds = posts.stream().map(Post::getId).toList();
         Map<Long, Long> likeCounts = batchLikeCounts(postIds);
         Map<Long, Long> commentCounts = batchCommentCounts(postIds);
-        Map<Long, String> nicknames = batchNicknames(posts);
+        Map<Long, User> authors = batchAuthors(posts);
         Map<Long, String> thumbnails = batchThumbnails(postIds);
+        Set<Long> likedPostIds = batchLikedPostIds(viewerId, postIds);
 
         return posts.stream()
-                .map(post -> new CasualPostSummaryResponse(
-                        post.getId(),
-                        post.getContent(),
-                        post.getUserId(),
-                        nicknames.get(post.getUserId()),
-                        post.getCreatedAt(),
-                        likeCounts.getOrDefault(post.getId(), 0L),
-                        commentCounts.getOrDefault(post.getId(), 0L),
-                        thumbnails.get(post.getId())))
+                .map(post -> {
+                    User author = authors.get(post.getUserId());
+                    return new CasualPostSummaryResponse(
+                            post.getId(),
+                            post.getContent(),
+                            post.getUserId(),
+                            author == null ? null : author.getNickname(),
+                            author == null ? null : author.getProfileImageUrl(),
+                            post.getCreatedAt(),
+                            likeCounts.getOrDefault(post.getId(), 0L),
+                            commentCounts.getOrDefault(post.getId(), 0L),
+                            likedPostIds.contains(post.getId()),
+                            thumbnails.get(post.getId()));
+                })
                 .toList();
     }
 
@@ -404,6 +413,34 @@ public class PostService {
                         // 한 글에 sortOrder 0 이 둘일 수 없지만, 그런 데이터가 생겨도
                         // toMap 이 IllegalStateException 으로 목록 전체를 죽이지 않게 둡니다.
                         (first, ignored) -> first));
+    }
+
+    /**
+     * 목록 카드에 그릴 작성자 정보(닉네임 + 프로필 사진)를 한 번에 모읍니다.
+     *
+     * <p>{@code findNicknamesByIds} 를 쓰면 닉네임만 나와서 프로필 사진이 빠집니다. 그러면
+     * 클라이언트가 <b>카드마다 유저를 다시 조회</b>하게 됩니다 — 실제로 그러고 있었습니다.
+     * 어차피 {@code findNicknamesByIds} 도 내부에서 {@code findAllById} 로 엔티티를 통째로
+     * 불러오므로, 여기서 직접 부르는 것과 쿼리 수가 같습니다.
+     */
+    private Map<Long, User> batchAuthors(List<Post> posts) {
+        List<Long> authorIds = posts.stream().map(Post::getUserId).distinct().toList();
+        return userRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+    }
+
+    /**
+     * 보는 사람이 좋아요를 누른 글 id 집합. 글마다 exists 를 부르면 목록 크기만큼 쿼리가 나갑니다.
+     *
+     * <p>{@code viewerId} 가 null 이면 조회하지 않습니다 — {@code l.userId = null} 은 어떤 행과도
+     * 일치하지 않아 결과가 반드시 비기 때문입니다. 지금 이 목록은 인증이 필요해서 사실상
+     * 안 일어나지만, 나중에 공개로 열리면 그때 바로 새는 자리입니다.
+     */
+    private Set<Long> batchLikedPostIds(Long viewerId, List<Long> postIds) {
+        if (viewerId == null) {
+            return Set.of();
+        }
+        return new HashSet<>(postLikeRepository.findLikedPostIds(viewerId, postIds));
     }
 
     private Map<Long, String> batchNicknames(List<Post> posts) {

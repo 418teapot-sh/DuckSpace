@@ -67,13 +67,19 @@ public class PostController {
             description = """
                     cursor를 비우면 최신 글부터, 값을 주면 그보다 오래된 글을 내려줍니다(마지막으로 받은 postId를 cursor에 넣으면 됨).
                     authorId를 주면 그 유저가 쓴 글만 나옵니다(마이페이지용). keyword와 같이 줄 수도 있으며 AND 조건입니다.
+
+                    카드를 그리는 데 필요한 것은 이 응답 하나에 다 있습니다 —
+                    thumbnailUrl(대표 사진 1장), authorProfileImageUrl, liked(보는 사람 기준).
+                    글마다 상세 API를 따로 부르지 마세요.
                     """)
     @GetMapping("/casual")
-    public ApiResponse<List<CasualPostSummaryResponse>> listCasual(@RequestParam(required = false) String keyword,
+    public ApiResponse<List<CasualPostSummaryResponse>> listCasual(@AuthenticationPrincipal AuthUser authUser,
+                                                                     @RequestParam(required = false) String keyword,
                                                                      @RequestParam(required = false) Long cursor,
                                                                      @RequestParam(required = false) Integer size,
                                                                      @RequestParam(required = false) Long authorId) {
-        return ApiResponse.success(postService.listCasual(keyword, cursor, size, authorId));
+        return ApiResponse.success(
+                postService.listCasual(keyword, cursor, size, authorId, authUser.getUserId()));
     }
 
     @Operation(summary = "교환 글 작성", description = "3단계(기본정보/내가 가진 굿즈/내가 원하는 굿즈) wizard를 한 번에 제출받습니다.")

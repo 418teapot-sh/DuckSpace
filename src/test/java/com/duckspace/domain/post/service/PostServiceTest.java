@@ -26,6 +26,8 @@ import com.duckspace.domain.post.repository.PostLikeRepository;
 import com.duckspace.domain.post.repository.PostRepository;
 import com.duckspace.domain.post.repository.PostThumbnail;
 import com.duckspace.domain.post.repository.TradeItemRepository;
+import com.duckspace.domain.user.entity.AuthProvider;
+import com.duckspace.domain.user.entity.User;
 import com.duckspace.domain.user.repository.UserRepository;
 import com.duckspace.global.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -53,6 +56,9 @@ import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class PostServiceTest {
+
+    /** 목록을 보는 사람. /api/posts 는 인증이 필요해서 항상 있습니다. */
+    private static final Long VIEWER = 77L;
 
     @Mock
     private PostRepository postRepository;
@@ -167,7 +173,7 @@ class PostServiceTest {
         void 키워드의_LIKE_와일드카드를_이스케이프해서_넘긴다() {
             given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
 
-            postService.listCasual("50%_off", null, null, null);
+            postService.listCasual("50%_off", null, null, null, VIEWER);
 
             verify(postRepository).search(any(), any(), eq("50\\%\\_off"), any(), any());
         }
@@ -176,7 +182,7 @@ class PostServiceTest {
         void authorId를_그대로_리포지토리에_넘긴다() {
             given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
 
-            postService.listCasual(null, null, null, 42L);
+            postService.listCasual(null, null, null, 42L, VIEWER);
 
             verify(postRepository).search(any(), any(), any(), eq(42L), any());
         }
@@ -185,7 +191,7 @@ class PostServiceTest {
         void keyword와_authorId를_동시에_넘기면_둘_다_그대로_전달된다() {
             given(postRepository.search(any(), any(), any(), any(), any())).willReturn(List.of());
 
-            postService.listCasual("치이카와", null, null, 42L);
+            postService.listCasual("치이카와", null, null, 42L, VIEWER);
 
             verify(postRepository).search(any(), any(), eq("치이카와"), eq(42L), any());
         }
@@ -201,11 +207,12 @@ class PostServiceTest {
 
             given(postRepository.search(any(), any(), any(), any(), any()))
                     .willReturn(List.of(withImage, withoutImage));
-            given(userRepository.findNicknamesByIds(List.of(10L))).willReturn(Map.of(10L, "글쓴이"));
+            given(userRepository.findAllById(List.of(10L)))
+                    .willReturn(List.of(user(10L, "글쓴이", "https://img/me.png")));
             given(postImageRepository.findThumbnails(List.of(1L, 2L), PostImage.THUMBNAIL_SORT_ORDER))
                     .willReturn(List.of(thumbnail(1L, "https://img/first.png")));
 
-            List<CasualPostSummaryResponse> result = postService.listCasual(null, null, null, null);
+            List<CasualPostSummaryResponse> result = postService.listCasual(null, null, null, null, VIEWER);
 
             assertThat(result).extracting(CasualPostSummaryResponse::thumbnailUrl)
                     .as("사진이 있는 글만 값이 차고, 없는 글은 null 이어야 합니다")
@@ -221,14 +228,78 @@ class PostServiceTest {
                     casualPost(1L, 10L), casualPost(2L, 10L), casualPost(3L, 11L));
 
             given(postRepository.search(any(), any(), any(), any(), any())).willReturn(posts);
-            given(userRepository.findNicknamesByIds(any())).willReturn(Map.of(10L, "A", 11L, "B"));
+            given(userRepository.findAllById(any()))
+                    .willReturn(List.of(user(10L, "A", null), user(11L, "B", null)));
             given(postImageRepository.findThumbnails(any(), anyInt())).willReturn(List.of());
 
-            postService.listCasual(null, null, null, null);
+            postService.listCasual(null, null, null, null, VIEWER);
 
             verify(postImageRepository, times(1))
                     .findThumbnails(List.of(1L, 2L, 3L), PostImage.THUMBNAIL_SORT_ORDER);
             verify(postImageRepository, never()).findByPost_IdOrderBySortOrderAsc(any());
+
+            // 좋아요·작성자도 글마다가 아니라 한 번에 — 프론트가 하던 방식을 서버가 반복하지 않게
+            verify(postLikeRepository, times(1)).findLikedPostIds(VIEWER, List.of(1L, 2L, 3L));
+            verify(postLikeRepository, never()).existsByPostIdAndUserId(any(), any());
+            verify(userRepository, times(1)).findAllById(List.of(10L, 11L));
+        }
+
+        @Test
+        @DisplayName("내가 좋아요한 글만 liked = true 로 온다")
+        void 좋아요_여부를_실어보낸다() {
+            // 이게 없어서 새로고침할 때마다 눌러둔 좋아요가 풀린 것처럼 보였습니다.
+            // 프론트는 카드마다 상세 API 를 불러 가리고 있었습니다.
+            Post likedPost = casualPost(1L, 10L);
+            Post notLikedPost = casualPost(2L, 10L);
+
+            given(postRepository.search(any(), any(), any(), any(), any()))
+                    .willReturn(List.of(likedPost, notLikedPost));
+            given(userRepository.findAllById(any()))
+                    .willReturn(List.of(user(10L, "글쓴이", null)));
+            given(postLikeRepository.findLikedPostIds(VIEWER, List.of(1L, 2L)))
+                    .willReturn(List.of(1L));
+
+            List<CasualPostSummaryResponse> result = postService.listCasual(null, null, null, null, VIEWER);
+
+            assertThat(result).extracting(CasualPostSummaryResponse::liked)
+                    .containsExactly(true, false);
+        }
+
+        @Test
+        @DisplayName("작성자 프로필 사진을 함께 실어 보낸다 — 없으면 null")
+        void 작성자_프로필을_실어보낸다() {
+            // 목록이 이미 작성자를 배치로 불러오면서 프로필 URL 을 버리고 있었습니다.
+            // 그래서 프론트가 카드마다 같은 유저를 다시 조회했습니다.
+            Post withProfile = casualPost(1L, 10L);
+            Post withoutProfile = casualPost(2L, 11L);
+
+            given(postRepository.search(any(), any(), any(), any(), any()))
+                    .willReturn(List.of(withProfile, withoutProfile));
+            given(userRepository.findAllById(any())).willReturn(List.of(
+                    user(10L, "사진있음", "https://img/me.png"),
+                    user(11L, "사진없음", null)));
+
+            List<CasualPostSummaryResponse> result = postService.listCasual(null, null, null, null, VIEWER);
+
+            assertThat(result)
+                    .extracting(CasualPostSummaryResponse::authorNickname,
+                            CasualPostSummaryResponse::authorProfileImageUrl)
+                    .containsExactly(
+                            tuple("사진있음", "https://img/me.png"),
+                            tuple("사진없음", null));
+        }
+
+        /** 목록 응답을 만들 때 필요한 필드만 채운 작성자. */
+        private User user(Long id, String nickname, String profileImageUrl) {
+            User user = User.builder()
+                    .email("u" + id + "@duckspace.com")
+                    .nickname(nickname)
+                    .password("encoded")
+                    .authProvider(AuthProvider.LOCAL)
+                    .build();
+            ReflectionTestUtils.setField(user, "id", id);
+            ReflectionTestUtils.setField(user, "profileImageUrl", profileImageUrl);
+            return user;
         }
 
         private PostThumbnail thumbnail(Long postId, String imageUrl) {
