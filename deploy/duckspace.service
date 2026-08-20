@@ -11,6 +11,9 @@ EnvironmentFile=/etc/duckspace/app.env
 ExecStart=/usr/bin/java -jar /home/ubuntu/DuckSpace/build/libs/duckspace.jar --spring.profiles.active=dev
 Restart=on-failure
 RestartSec=5
+# 종료 대기 예산: remove.bg(최대 10+60초) + S3 업로드(최대 30초) 등 워커 작업 최악 ~100초를
+# 넉넉히 덮도록 잡음(C-04). 기본값 90초로는 배포 중 재시작이 이 작업을 강제 종료(SIGKILL)할 수 있음.
+TimeoutStopSec=150
 
 [Install]
 WantedBy=multi-user.target
