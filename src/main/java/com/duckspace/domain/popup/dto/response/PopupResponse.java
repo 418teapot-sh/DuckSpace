@@ -17,14 +17,15 @@ public record PopupResponse(
         String aiSummary,
         boolean liked,
         String benefitImageUrl,
-        String benefitDescription
+        String benefitDescription,
+        String operatingHours
 ) {
     public static PopupResponse from(Popup popup, boolean liked) {
         return new PopupResponse(
                 popup.getId(), popup.getTitle(), popup.getImageUrl(), popup.getDescription(),
                 popup.getLocation(), popup.getStartDate(), popup.getEndDate(),
                 popup.getStatus(), popup.getAiSummary(), liked,
-                popup.getBenefitImageUrl(), popup.getBenefitDescription());
+                popup.getBenefitImageUrl(), popup.getBenefitDescription(), popup.getOperatingHours());
     }
 
     /** viewer 개념이 없는 경로(관리자 등록/수정 등)용 — "안 좋아함"이 아니라 "이 응답엔 찜 여부가 의미 없음"입니다. */

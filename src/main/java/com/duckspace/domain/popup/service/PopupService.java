@@ -79,6 +79,7 @@ public class PopupService {
                 .aiSummary(aiSummary)
                 .benefitImageUrl(request.benefitImageUrl())
                 .benefitDescription(request.benefitDescription())
+                .operatingHours(request.operatingHours())
                 .build();
 
         return PopupResponse.from(popupRepository.save(popup));
@@ -102,7 +103,8 @@ public class PopupService {
                 request.endDate(),
                 aiSummary,
                 request.benefitImageUrl(),
-                request.benefitDescription()
+                request.benefitDescription(),
+                request.operatingHours()
         );
         return PopupResponse.from(popup);
     }

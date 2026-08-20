@@ -51,10 +51,16 @@ public class Popup extends BaseTimeEntity {
     @Lob
     private String benefitDescription;
 
+    /**
+     * 운영시간 자유 텍스트. {@code location}과 같은 이유로 구조화(LocalTime 쌍)하지 않고 문자열로 둠 —
+     * "11:00~22:00(30분 단위 운영)"처럼 시각 외의 운영 방식 안내가 같이 붙는 경우가 흔해서다.
+     */
+    private String operatingHours;
+
     @Builder
     private Popup(String title, String imageUrl, String description, String location,
                   LocalDate startDate, LocalDate endDate, String aiSummary,
-                  String benefitImageUrl, String benefitDescription) {
+                  String benefitImageUrl, String benefitDescription, String operatingHours) {
         this.title = title;
         this.imageUrl = imageUrl;
         this.description = description;
@@ -64,11 +70,12 @@ public class Popup extends BaseTimeEntity {
         this.aiSummary = aiSummary;
         this.benefitImageUrl = benefitImageUrl;
         this.benefitDescription = benefitDescription;
+        this.operatingHours = operatingHours;
     }
 
     public void update(String title, String imageUrl, String description, String location,
                         LocalDate startDate, LocalDate endDate, String aiSummary,
-                        String benefitImageUrl, String benefitDescription) {
+                        String benefitImageUrl, String benefitDescription, String operatingHours) {
         this.title = title;
         this.imageUrl = imageUrl;
         this.description = description;
@@ -78,6 +85,7 @@ public class Popup extends BaseTimeEntity {
         this.aiSummary = aiSummary;
         this.benefitImageUrl = benefitImageUrl;
         this.benefitDescription = benefitDescription;
+        this.operatingHours = operatingHours;
     }
 
     public PopupStatus getStatus() {

@@ -13,7 +13,8 @@ public record PopupUpdateRequest(
         @NotNull LocalDate startDate,
         @NotNull LocalDate endDate,
         String benefitImageUrl,
-        String benefitDescription
+        String benefitDescription,
+        String operatingHours
 ) {
 
 
