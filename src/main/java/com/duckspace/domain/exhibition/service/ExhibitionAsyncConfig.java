@@ -2,6 +2,7 @@ package com.duckspace.domain.exhibition.service;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
@@ -54,7 +55,21 @@ public class ExhibitionAsyncConfig {
     /** 위 주석의 계산 근거. 업로드 상한(10MB)을 바꾸면 여기도 같이 봐야 합니다. */
     private static final int QUEUE_CAPACITY = 20;
 
+    /**
+     * <b>{@code @DependsOn} 은 종료 순서 때문에 붙였습니다.</b>
+     *
+     * <p>스프링은 <b>생성의 역순</b>으로 빈을 파괴합니다. 선언 순서대로 두면 정리 실행기가
+     * 나중에 만들어져 <b>먼저</b> 종료되는데, 그때 이미지 실행기는 아직 최대 60초의 배수 시간이
+     * 남아 있습니다. 그 사이 이미지 작업이 부르는
+     * {@code ImageCleanup.delete/deleteOrphan} 은 이미 닫힌 실행기에서 거절되어
+     * 인라인 폴백으로 떨어집니다 — 배수 예산을 잡아둔 바로 그 구간에 DB 조회와 저장소 왕복이
+     * 이미지 스레드로 들어옵니다.
+     *
+     * <p>정리 실행기를 <b>먼저 만들면</b> 역순 파괴 규칙에 따라 <b>가장 나중에</b> 닫힙니다.
+     * 동작이 우연한 선언 순서에 의존하지 않도록 의존성으로 못박습니다.
+     */
     @Bean(IMAGE_EXECUTOR)
+    @DependsOn(CLEANUP_EXECUTOR)
     public Executor exhibitionImageExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
