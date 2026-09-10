@@ -1,5 +1,6 @@
 package com.duckspace.domain.popup;
 
+import com.duckspace.global.support.ServiceZone;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -8,6 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.LocalDate;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,16 +31,20 @@ class PopupAdminSmokeTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void 관리자가_팝업을_등록하면_AI요약_필드까지_포함해서_응답한다() throws Exception {
+        LocalDate today = LocalDate.now(ServiceZone.ZONE);
+        LocalDate upcomingStartDate = today.plusDays(5);
+        LocalDate upcomingEndDate = today.plusDays(20);
+
         String createBody = """
                 {
                   "title": "치이카와 팝업스토어",
                   "imageUrl": "https://example.com/chiikawa.png",
                   "description": "성수동에서 열리는 치이카와 팝업스토어입니다.",
                   "location": "성수동",
-                  "startDate": "2026-09-01",
-                  "endDate": "2026-09-20"
+                  "startDate": "%s",
+                  "endDate": "%s"
                 }
-                """;
+                """.formatted(upcomingStartDate, upcomingEndDate);
 
         String createResponse = mockMvc.perform(post("/api/admin/popups")
                         .contentType(MediaType.APPLICATION_JSON)
